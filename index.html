@@ -613,11 +613,26 @@ function renderMailing(){
 }
 function toggleMailingFilter(){ mailingOnlyOpen = document.getElementById('mailing-filter').checked; renderMailing(); }
 
+/* ---------- Stabiele referte per lid (nodig om later te kunnen afpunten) ---------- */
+async function ensureMemberOgm(i){
+  const m = members[i];
+  if(m.openOgm && m.openOgm.raw) return m.openOgm;
+  const ogm = generateOGM();
+  m.openOgm = { raw: ogm.raw, formatted: ogm.formatted };
+  settings.nextRef = (settings.nextRef||1) + 1;
+  await Promise.all([saveMembers(), saveSettings()]);
+  return m.openOgm;
+}
+function formatOgmDisplay(raw){
+  if(!raw || raw.length!==12) return raw||'';
+  return `+++${raw.slice(0,3)}/${raw.slice(3,7)}/${raw.slice(7,12)}+++`;
+}
+
 async function downloadMemberQr(i){
   const m = members[i];
   if(!settings.iban || !ibanValid(settings.iban)){ toast('Vul eerst een geldig IBAN in bij Instellingen.'); return; }
   if(typeof QRCode === 'undefined'){ toast('QR-bibliotheek niet geladen.'); return; }
-  const ogm = generateOGM();
+  const ogm = await ensureMemberOgm(i);
   const payload = buildEpcPayload(m.bedrag, ogm.raw);
   const hidden = document.createElement('div');
   hidden.style.position='fixed'; hidden.style.left='-9999px';
@@ -636,22 +651,18 @@ async function downloadMemberQr(i){
     toast('QR-code kon niet gedownload worden.');
   }
   document.body.removeChild(hidden);
-  settings.nextRef = (settings.nextRef||1) + 1;
-  await saveSettings();
 }
 
 async function openMailDraft(i){
   const m = members[i];
   if(!settings.iban || !ibanValid(settings.iban)){ toast('Vul eerst een geldig IBAN in bij Instellingen.'); return; }
   if(!m.email){ toast('Dit lid heeft geen e-mailadres.'); return; }
-  const ogm = generateOGM();
+  const ogm = await ensureMemberOgm(i);
   const chiroNaam = settings.naam || 'de Chiro';
   const subject = `Lidgeld ${chiroNaam} — ${m.naam}`;
   const body = `Beste,\n\nGraag ontvangen we het lidgeld voor ${m.naam}.\n\nBedrag: ${euro(m.bedrag)}\nRekeningnummer: ${settings.iban}\nMededeling: ${ogm.formatted}\n\nJe kan overschrijven met bovenstaande gegevens, of de meegestuurde QR-code scannen met je bankapp voor een automatisch ingevulde overschrijving.\n\nAlvast bedankt!\n${chiroNaam}`;
   const mailUrl = `mailto:${m.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   window.location.href = mailUrl;
-  settings.nextRef = (settings.nextRef||1) + 1;
-  await saveSettings();
   setTimeout(()=>{ if(confirm(`Mail geopend voor ${m.naam}. Markeren als verstuurd?`)) markMailSent(i); }, 800);
 }
 async function markMailSent(i){
@@ -662,8 +673,9 @@ async function markMailSent(i){
 
 /* ---------- QR modal ---------- */
 let qrCtx = null;
-function openQr(i){
+async function openQr(i){
   const m = members[i];
+  await ensureMemberOgm(i);
   qrCtx = { memberIndex:i, amount:m.bedrag };
   document.getElementById('qr-modal').classList.add('open');
   renderQrModal();
@@ -683,9 +695,9 @@ function renderQrModal(){
     body.innerHTML = `<p class="muted">Vul eerst een geldig IBAN-rekeningnummer van de Chiro in bij <b>Instellingen</b> voordat je een betaalverzoek kan maken.</p>`;
     return;
   }
-  const ogm = generateOGM();
+  const ogm = isProef ? generateOGM() : m.openOgm;
   body.innerHTML = `
-    ${isProef ? `<p class="muted">Dit is een proefbetaling om te testen of de QR-code correct werkt met jullie rekening. Ze wordt niet aan een lid gekoppeld en telt niet mee in het echte saldo.</p>` : `<p class="muted">Voor <b>${escapeHtml(m.naam)}</b></p>`}
+    ${isProef ? `<p class="muted">Dit is een proefbetaling om te testen of de QR-code correct werkt met jullie rekening. Ze wordt niet aan een lid gekoppeld en telt niet mee in het echte saldo.</p>` : `<p class="muted">Voor <b>${escapeHtml(m.naam)}</b> — deze referte blijft dezelfde tot de betaling binnenkomt, ook als je later opnieuw een betaalverzoek verstuurt.</p>`}
     <div class="field"><label>Bedrag</label><input id="qr-bedrag" type="number" step="0.01" value="${qrCtx.amount}"></div>
     <button class="btn btn-primary btn-block" onclick="generateQr('${ogm.raw}','${ogm.formatted}')">QR-code genereren</button>
     <div id="qr-output"></div>
@@ -708,7 +720,7 @@ Rekeningnummer: ${settings.iban}
 Mededeling: ${ogmFormatted}</div>
     <div class="row2" style="margin-top:10px;">
       <button class="btn btn-ghost" onclick="copyPaymentText()">Kopieer tekst</button>
-      <button class="btn btn-primary" onclick="markPaid(${qrCtx.memberIndex}, ${amount}, '${ogmFormatted}')">Markeer als betaald</button>
+      <button class="btn btn-primary" onclick="markPaid(${qrCtx.memberIndex}, ${amount}, '${ogmFormatted}', '${ogmRaw}')">Markeer als betaald</button>
     </div>
   `;
   const qrHost = document.getElementById('qr-canvas');
@@ -719,8 +731,10 @@ Mededeling: ${ogmFormatted}</div>
   }catch(e){
     qrHost.innerHTML = '<p class="muted">QR-code kon niet geladen worden — gebruik de mededeling en rekeninggegevens hieronder om manueel over te schrijven.</p>';
   }
-  settings.nextRef = (settings.nextRef||1) + 1;
-  await saveSettings();
+  if(qrCtx.memberIndex === -1){
+    settings.nextRef = (settings.nextRef||1) + 1;
+    await saveSettings();
+  }
 }
 
 function copyPaymentText(){
@@ -728,7 +742,7 @@ function copyPaymentText(){
   navigator.clipboard?.writeText(txt).then(()=> toast('Tekst gekopieerd.')).catch(()=> toast('Kopiëren niet gelukt.'));
 }
 
-async function markPaid(i, amount, ogmFormatted){
+async function markPaid(i, amount, ogmFormatted, ogmRaw){
   const isProef = i === -1;
   const isTest = isProef ? true : !!members[i].isTest;
   let omschrijving;
@@ -736,14 +750,180 @@ async function markPaid(i, amount, ogmFormatted){
     omschrijving = `Proefbetaling (${ogmFormatted})`;
   } else {
     members[i].paidThisYear = true;
+    members[i].openOgm = null;
     await saveMembers();
     omschrijving = `Lidgeld ${members[i].naam} (${ogmFormatted})`;
   }
-  ledger.push({ id: Date.now(), datum: todayStr(), omschrijving, categorie:'Lidgeld', bedrag: amount, type:'in', isTest });
+  ledger.push({ id: Date.now(), datum: todayStr(), omschrijving, categorie:'Lidgeld', bedrag: amount, type:'in', isTest, ogmRaw: ogmRaw || null });
   await saveLedger();
   closeQrModal();
   render();
   toast(isTest ? 'Testbetaling geregistreerd — telt niet mee in het echte saldo.' : 'Betaling geregistreerd in de boekhouding.');
+}
+
+/* ---------- Rekeninguittreksel importeren (CODA) & afpunten ---------- */
+let codaTransactions = [];
+
+function codaField(line, start, end){ return line.substring(start-1, end); }
+
+function codaDateToIso(ddmmjj){
+  if(!ddmmjj || ddmmjj.length!==6 || ddmmjj==='000000') return todayStr();
+  const dd=ddmmjj.slice(0,2), mm=ddmmjj.slice(2,4), yy=ddmmjj.slice(4,6);
+  const yyyy = (parseInt(yy,10) < 70 ? '20' : '19') + yy;
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function parseCoda(text){
+  const lines = text.split(/\r\n|\r|\n/);
+  const transactions = [];
+  const byVolgnummer = {};
+  for(const line of lines){
+    if(line.length < 60 || line[0] !== '2') continue;
+    const artikel = line[1];
+    if(artikel === '1'){
+      const volgnummer = codaField(line,3,6);
+      const teken = codaField(line,32,32);
+      const bedragRaw = codaField(line,33,47).replace(/\D/g,'');
+      const bedrag = bedragRaw ? parseInt(bedragRaw,10)/1000 : 0;
+      const valutadatum = codaField(line,48,53);
+      const soortMed = codaField(line,62,62);
+      const medZone = line.substring(62,115);
+      let ogmRaw = null, vrijeMededeling = null;
+      if(soortMed === '1'){
+        const mtype = medZone.substring(0,3);
+        const inhoud = medZone.substring(3);
+        if(mtype === '101' || mtype === '102'){
+          ogmRaw = inhoud.substring(0,12).replace(/\s/g,'');
+        } else {
+          vrijeMededeling = inhoud.trim();
+        }
+      } else {
+        vrijeMededeling = medZone.trim();
+      }
+      const boekingsdatum = codaField(line,116,121);
+      const tx = {
+        volgnummer,
+        type: teken==='0' ? 'in' : 'out',
+        bedrag,
+        datum: codaDateToIso(boekingsdatum && boekingsdatum!=='000000' ? boekingsdatum : valutadatum),
+        ogmRaw, vrijeMededeling, tegenpartij: null
+      };
+      transactions.push(tx);
+      byVolgnummer[volgnummer] = tx;
+    } else if(artikel === '3'){
+      const volgnummer = codaField(line,3,6);
+      const naam = codaField(line,48,82).trim();
+      if(byVolgnummer[volgnummer] && naam) byVolgnummer[volgnummer].tegenpartij = naam;
+    }
+  }
+  return transactions.filter(t=>t.type==='in' && t.bedrag>0);
+}
+
+function matchCodaTx(tx){
+  if(!tx.ogmRaw) return { status:'geen-ref' };
+  if(ledger.some(e=>e.ogmRaw === tx.ogmRaw)) return { status:'geboekt' };
+  const idx = members.findIndex(m=>!m.paidThisYear && !m.isTest && m.openOgm && m.openOgm.raw === tx.ogmRaw);
+  if(idx>=0) return { status:'match', memberIndex: idx };
+  return { status:'geen-match' };
+}
+
+async function markPaidFromCoda(memberIndex, tx){
+  const m = members[memberIndex];
+  m.paidThisYear = true;
+  m.openOgm = null;
+  await saveMembers();
+  const ref = tx.ogmRaw ? formatOgmDisplay(tx.ogmRaw) : (tx.vrijeMededeling || tx.tegenpartij || '');
+  ledger.push({ id: Date.now(), datum: tx.datum, omschrijving: `Lidgeld ${m.naam} (rekeninguittreksel${ref?': '+ref:''})`, categorie:'Lidgeld', bedrag: tx.bedrag, type:'in', isTest: !!m.isTest, ogmRaw: tx.ogmRaw||null });
+  await saveLedger();
+}
+
+async function handleCodaImport(evt){
+  const file = evt.target.files[0];
+  const status = document.getElementById('coda-status');
+  if(!file) return;
+  status.textContent = 'Bestand wordt gelezen…';
+  try{
+    const text = await file.text();
+    const txs = parseCoda(text);
+    codaTransactions = txs;
+    status.textContent = txs.length===0
+      ? 'Geen inkomende verrichtingen gevonden. Is dit een geldig CODA-bestand (.coda)?'
+      : `${txs.length} inkomende verrichting(en) gevonden.`;
+  }catch(e){
+    status.textContent = 'Kon dit bestand niet lezen. Vraag bij je bank een CODA-bestand (.coda) van je rekeninguittreksels op.';
+    codaTransactions = [];
+  }
+  evt.target.value = '';
+  renderBoekhouding();
+}
+
+async function confirmCodaMatch(txIdx){
+  const tx = codaTransactions[txIdx];
+  const r = matchCodaTx(tx);
+  if(r.status !== 'match') return;
+  await markPaidFromCoda(r.memberIndex, tx);
+  codaTransactions.splice(txIdx,1);
+  render();
+  toast('Betaling afgepunt.');
+}
+async function manualCodaMatch(txIdx, memberIndex){
+  if(memberIndex === '' || memberIndex==null) return;
+  const tx = codaTransactions[txIdx];
+  await markPaidFromCoda(parseInt(memberIndex,10), tx);
+  codaTransactions.splice(txIdx,1);
+  render();
+  toast('Betaling gekoppeld en afgepunt.');
+}
+function dismissCodaTx(txIdx){
+  codaTransactions.splice(txIdx,1);
+  renderBoekhouding();
+}
+async function confirmAllCodaMatches(){
+  const toProcess = [];
+  codaTransactions.forEach(tx=>{
+    const r = matchCodaTx(tx);
+    if(r.status==='match') toProcess.push({tx, memberIndex:r.memberIndex});
+  });
+  if(toProcess.length===0) return;
+  for(const {tx, memberIndex} of toProcess){
+    await markPaidFromCoda(memberIndex, tx);
+  }
+  const processedRefs = new Set(toProcess.map(p=>p.tx.ogmRaw));
+  codaTransactions = codaTransactions.filter(tx=> !processedRefs.has(tx.ogmRaw));
+  render();
+  toast(`${toProcess.length} betaling(en) afgepunt.`);
+}
+
+function renderCodaReview(){
+  if(codaTransactions.length === 0) return '';
+  const openMembersOptions = members.filter(m=>!m.paidThisYear && !m.isTest);
+  const rows = codaTransactions.map((tx,idx)=>{
+    const r = matchCodaTx(tx);
+    const omschrijving = tx.ogmRaw ? formatOgmDisplay(tx.ogmRaw) : (tx.vrijeMededeling || tx.tegenpartij || '(geen mededeling)');
+    let actionHtml = '';
+    if(r.status==='geboekt'){
+      actionHtml = `<span class="pill test">Al geboekt</span>`;
+    } else if(r.status==='match'){
+      actionHtml = `<span class="pill paid">${escapeHtml(members[r.memberIndex].naam)}</span> <button class="btn btn-primary btn-sm" onclick="confirmCodaMatch(${idx})">Bevestig</button>`;
+    } else {
+      actionHtml = `
+        <select id="coda-select-${idx}" style="width:auto; display:inline-block; font-size:12.5px; padding:6px 8px;">
+          <option value="">Koppel aan lid…</option>
+          ${openMembersOptions.map(m=>`<option value="${members.indexOf(m)}">${escapeHtml(m.naam)}</option>`).join('')}
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="manualCodaMatch(${idx}, document.getElementById('coda-select-${idx}').value)">Koppel</button>
+        <button class="del-x" onclick="dismissCodaTx(${idx})" title="Negeren">✕</button>`;
+    }
+    return `<tr><td class="tnum">${tx.datum}</td><td class="tnum amt-in">+${euro(tx.bedrag)}</td><td>${escapeHtml(omschrijving)}${tx.tegenpartij?`<br><span class="muted">${escapeHtml(tx.tegenpartij)}</span>`:''}</td><td>${actionHtml}</td></tr>`;
+  }).join('');
+  const matchCount = codaTransactions.filter(tx=>matchCodaTx(tx).status==='match').length;
+  return `
+    <div class="card">
+      <h3 class="card-title">Te bevestigen (${codaTransactions.length})</h3>
+      ${matchCount>0 ? `<button class="btn btn-primary" style="margin-bottom:10px;" onclick="confirmAllCodaMatches()">Bevestig alle ${matchCount} voorgestelde koppeling(en)</button>` : ''}
+      <div class="table-scroll"><table><thead><tr><th>Datum</th><th>Bedrag</th><th>Mededeling</th><th>Koppeling</th></tr></thead><tbody>${rows}</tbody></table></div>
+    </div>
+  `;
 }
 
 /* ---------- Boekhouding ---------- */
@@ -754,6 +934,13 @@ function renderBoekhouding(){
   const testEntries = ledger.filter(e=>e.isTest);
   const testNet = testEntries.reduce((s,e)=> s + (e.type==='in'? e.bedrag : -e.bedrag), 0);
   el.innerHTML = `
+    <div class="card">
+      <h3 class="card-title">Rekeninguittreksel importeren</h3>
+      <p class="muted">Vraag bij je bank een <b>CODA-bestand</b> (.coda) van je rekeninguittreksels op — dat is het gestandaardiseerde formaat dat alle Belgische banken aanbieden, en waarin de gestructureerde mededeling herkenbaar staat. Chirokas leest het bestand, stelt automatisch koppelingen voor met leden die nog moeten betalen, en boekt pas na jouw bevestiging.</p>
+      <input id="coda-file" type="file" accept=".coda,.txt" style="margin-top:8px;" onchange="handleCodaImport(event)">
+      <div id="coda-status" class="muted" style="margin-top:8px;"></div>
+    </div>
+    ${renderCodaReview()}
     <div class="card">
       <h3 class="card-title">Nieuwe boeking</h3>
       <div class="row2">
