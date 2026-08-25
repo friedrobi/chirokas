@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chirokas</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#3F5B3D">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Chirokas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<!-- ============================================================
+     FIREBASE-CONFIGURATIE
+     Vul hieronder de config in van je EIGEN gratis Firebase-project
+     (console.firebase.google.com > Projectinstellingen > Jouw apps > Web-app).
+     Zie README.md voor de volledige stap-voor-stap uitleg.
+     ============================================================ -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+  import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+  import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBQDr0BuVS72KCBNMOyFSnjR3735TkpEMc",
+    authDomain: "chirokas-8c1d1.firebaseapp.com",
+    projectId: "chirokas-8c1d1",
+    storageBucket: "chirokas-8c1d1.firebasestorage.app",
+    messagingSenderId: "976970110843",
+    appId: "1:976970110843:web:08a722950449e2b1bb4fde"
+  };
+
+  const fbApp = initializeApp(firebaseConfig);
+  const db = getFirestore(fbApp);
+  const auth = getAuth(fbApp);
+
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      window.__firestore = { doc, getDoc, setDoc, db };
+      window.__firestoreReady = true;
+    }
+  });
+  signInAnonymously(auth).catch((err) => {
+    console.error('Firebase aanmelden mislukt:', err);
+    window.__firestoreError = true;
+  });
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(()=>{}));
+  }
+</script>
+<style>
+  :root{
+    --paper:#FAF6EC;
+    --card:#FFFDF7;
+    --ink:#23301E;
+    --ink-soft:#5B6455;
+    --forest:#3F5B3D;
+    --forest-dark:#2C4029;
+    --campfire:#C1622D;
+    --campfire-dark:#A34F22;
+    --rope:#D8C7A1;
+    --rope-line:#C9B589;
+    --moss:#5C7A4B;
+    --moss-bg:#E7EEE0;
+    --rust:#B4472A;
+    --rust-bg:#F5E4DD;
+    --shadow: 0 1px 2px rgba(35,48,30,.06), 0 4px 14px rgba(35,48,30,.06);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(35,48,30,0.05) 1px, transparent 0);
+    background-size: 22px 22px;
+    color:var(--ink);
+    font-family:'Work Sans', system-ui, sans-serif;
+    min-height:100vh;
+  }
+  h1,h2,h3,.display{
+    font-family:'Fraunces', Georgia, serif;
+    font-weight:600;
+    letter-spacing:-0.01em;
+  }
+  .tnum{ font-variant-numeric: tabular-nums; }
+  button{ font-family:inherit; cursor:pointer; }
+  input, select{ font-family:inherit; }
+
+  .app{ max-width:960px; margin:0 auto; padding:0 16px 64px; }
+
+  /* Header */
+  .header{
+    background:var(--forest);
+    color:#F3EEDC;
+    padding:22px 16px 18px;
+    margin:0 -16px 18px;
+    border-radius:0 0 18px 18px;
+    position:relative;
+    overflow:hidden;
+  }
+  .header::after{
+    content:"";
+    position:absolute; right:-30px; top:-30px;
+    width:140px; height:140px; border-radius:50%;
+    background:rgba(255,255,255,0.06);
+  }
+  .header-top{ display:flex; align-items:center; justify-content:space-between; gap:12px; position:relative; z-index:1;}
+  .header-eyebrow{ font-size:11px; letter-spacing:.14em; text-transform:uppercase; opacity:.75; margin:0 0 2px; }
+  .header-title{ margin:0; font-size:26px; color:#fff; }
+  .header-balance{ text-align:right; }
+  .header-balance .amt{ font-family:'Fraunces',serif; font-size:28px; font-weight:600; color:#fff; }
+  .header-balance .lbl{ font-size:11px; opacity:.75; letter-spacing:.08em; text-transform:uppercase; }
+
+  /* Nav */
+  .nav{ display:flex; gap:6px; margin-bottom:20px; background:var(--rope); padding:5px; border-radius:12px; }
+  .nav button{
+    flex:1; border:none; background:transparent; color:var(--forest-dark);
+    padding:9px 8px; border-radius:8px; font-weight:600; font-size:13.5px;
+    transition:background .15s, color .15s;
+  }
+  .nav button.active{ background:var(--card); color:var(--campfire-dark); box-shadow:var(--shadow); }
+
+  .section{ display:none; animation: fadein .25s ease; }
+  .section.active{ display:block; }
+  @keyframes fadein{ from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;} }
+
+  /* Cards */
+  .card{
+    background:var(--card); border:1px solid var(--rope-line); border-radius:14px;
+    padding:18px; box-shadow:var(--shadow); margin-bottom:16px;
+  }
+  .card-title{ margin:0 0 4px; font-size:15px; }
+  .muted{ color:var(--ink-soft); font-size:13px; margin:0; }
+
+  .stat-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:16px; }
+  .stat{ background:var(--card); border:1px solid var(--rope-line); border-radius:14px; padding:14px 14px; box-shadow:var(--shadow); }
+  .stat .v{ font-family:'Fraunces',serif; font-size:22px; font-weight:600; }
+  .stat .k{ font-size:11.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.06em; margin-top:2px; }
+  .stat.income .v{ color:var(--moss); }
+  .stat.expense .v{ color:var(--rust); }
+  @media (max-width:560px){ .stat-grid{ grid-template-columns:1fr 1fr; } }
+
+  /* Buttons */
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    border-radius:9px; padding:9px 14px; font-weight:600; font-size:13.5px;
+    border:1px solid transparent; transition:transform .1s, filter .1s;
+  }
+  .btn:active{ transform:scale(.97); }
+  .btn:disabled{ opacity:.45; cursor:not-allowed; }
+  .btn-primary{ background:var(--campfire); color:#fff; }
+  .btn-primary:hover{ filter:brightness(1.06); }
+  .btn-ghost{ background:transparent; color:var(--forest-dark); border-color:var(--rope-line); }
+  .btn-ghost:hover{ background:var(--rope); }
+  .btn-danger{ background:transparent; color:var(--rust); border-color:var(--rust-bg); }
+  .btn-danger:hover{ background:var(--rust-bg); }
+  .btn-sm{ padding:6px 10px; font-size:12.5px; border-radius:7px; }
+  .btn-block{ width:100%; }
+
+  /* Forms */
+  label{ display:block; font-size:12.5px; font-weight:600; color:var(--ink-soft); margin:0 0 4px; }
+  .field{ margin-bottom:12px; }
+  input[type=text], input[type=number], input[type=email], input[type=date], select, textarea{
+    width:100%; padding:9px 10px; border:1px solid var(--rope-line); border-radius:8px;
+    background:#fff; color:var(--ink); font-size:14px;
+  }
+  input:focus, select:focus, textarea:focus{ outline:2px solid var(--campfire); outline-offset:1px; }
+  .row2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  @media (max-width:560px){ .row2{ grid-template-columns:1fr; } }
+
+  /* Member badge card */
+  .member-card{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background:var(--card); border:1px dashed var(--rope-line); border-radius:12px;
+    padding:12px 14px; margin-bottom:10px; position:relative;
+  }
+  .member-card::before{
+    content:""; position:absolute; left:0; top:14px; bottom:14px; width:4px;
+    background:var(--forest); border-radius:0 3px 3px 0;
+  }
+  .member-card.paid::before{ background:var(--moss); }
+  .member-card.due::before{ background:var(--rust); }
+  .member-name{ font-weight:600; font-size:14.5px; }
+  .member-sub{ font-size:12px; color:var(--ink-soft); }
+  .pill{ font-size:11px; font-weight:700; padding:3px 9px; border-radius:100px; letter-spacing:.02em; }
+  .pill.paid{ background:var(--moss-bg); color:var(--moss); }
+  .pill.due{ background:var(--rust-bg); color:var(--rust); }
+  .pill.test{ background:#FDF3D8; color:#8A6D1D; }
+  .member-actions{ display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+
+  .test-banner{
+    background:#FDF3D8; color:#8A6D1D; border:1px solid #E9D48B; border-radius:10px;
+    padding:9px 12px; font-size:12.5px; font-weight:600; margin-bottom:14px;
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+  }
+  .test-banner button{ background:none; border:none; color:#8A6D1D; text-decoration:underline; font-weight:700; font-size:12.5px; padding:0; }
+  .toggle-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:2px 0; }
+  .switch{ position:relative; width:42px; height:24px; flex:none; }
+  .switch input{ opacity:0; width:100%; height:100%; margin:0; position:absolute; cursor:pointer; }
+  .switch .track{ position:absolute; inset:0; background:var(--rope-line); border-radius:100px; transition:background .15s; }
+  .switch .track::after{ content:""; position:absolute; top:3px; left:3px; width:18px; height:18px; background:#fff; border-radius:50%; transition:transform .15s; }
+  .switch input:checked + .track{ background:var(--campfire); }
+  .switch input:checked + .track::after{ transform:translateX(18px); }
+
+  /* Ledger table */
+  table{ width:100%; border-collapse:collapse; font-size:13.5px; }
+  th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-soft); padding:6px 8px; border-bottom:1px solid var(--rope-line); }
+  td{ padding:9px 8px; border-bottom:1px solid #EFE8D6; vertical-align:middle; }
+  tr:last-child td{ border-bottom:none; }
+  .amt-in{ color:var(--moss); font-weight:600; }
+  .amt-out{ color:var(--rust); font-weight:600; }
+  .cat-tag{ font-size:11px; background:var(--rope); color:var(--forest-dark); padding:2px 8px; border-radius:100px; }
+  .table-scroll{ overflow-x:auto; }
+  .del-x{ background:none; border:none; color:var(--ink-soft); font-size:15px; padding:2px 6px; border-radius:6px; }
+  .del-x:hover{ color:var(--rust); background:var(--rust-bg); }
+
+  /* Modal */
+  .modal-backdrop{
+    display:none; position:fixed; inset:0; background:rgba(35,48,30,0.5);
+    align-items:center; justify-content:center; padding:16px; z-index:50;
+  }
+  .modal-backdrop.open{ display:flex; }
+  .modal{
+    background:var(--paper); border-radius:16px; max-width:420px; width:100%;
+    max-height:90vh; overflow-y:auto; padding:20px; position:relative;
+    border:1px solid var(--rope-line);
+  }
+  .modal-close{ position:absolute; top:12px; right:12px; background:none; border:none; font-size:18px; color:var(--ink-soft); }
+  .qr-card{
+    background:#fff; border:2px dashed var(--rope-line); border-radius:14px;
+    padding:16px; text-align:center; margin:14px 0;
+  }
+  .qr-card #qr-canvas{ display:inline-block; margin:8px auto; }
+  .ogm-code{ font-family:'Work Sans',monospace; font-weight:700; letter-spacing:.03em; font-size:16px; margin-top:6px; }
+  .copy-box{ background:#fff; border:1px solid var(--rope-line); border-radius:10px; padding:10px 12px; font-size:12.5px; color:var(--ink-soft); white-space:pre-wrap; margin-top:10px; }
+
+  .empty{ text-align:center; padding:26px 10px; color:var(--ink-soft); }
+  .toast{
+    position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
+    background:var(--forest); color:#fff; padding:10px 18px; border-radius:100px;
+    font-size:13px; font-weight:600; box-shadow:var(--shadow); z-index:80;
+    opacity:0; pointer-events:none; transition:opacity .2s, transform .2s;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(-4px); }
+  .badge-check{ color:var(--moss); font-weight:700; font-size:12px; }
+  .badge-warn{ color:var(--rust); font-weight:700; font-size:12px; }
+  .loading{ text-align:center; padding:60px 10px; color:var(--ink-soft); }
+  .footnote{ font-size:11.5px; color:var(--ink-soft); text-align:center; margin-top:24px; line-height:1.5; }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="loading" id="loading">Chirokas wordt geladen…</div>
+</div>
+
+<div class="modal-backdrop" id="qr-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeQrModal()">✕</button>
+    <h3 style="margin-top:0;">Betaalverzoek</h3>
+    <div id="qr-modal-body"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------- Storage helpers (Firestore) ---------- */
+let settings = { naam:'', iban:'', bic:'', rekeninghouder:'', nextRef: 1 };
+let members = [];
+let ledger = [];
+
+function waitForFirestore(){
+  return new Promise((resolve, reject)=>{
+    if(window.__firestoreReady) return resolve();
+    const iv = setInterval(()=>{
+      if(window.__firestoreReady){ clearInterval(iv); resolve(); }
+      if(window.__firestoreError){ clearInterval(iv); reject(new Error('Firebase-aanmelding mislukt')); }
+    }, 40);
+    setTimeout(()=>{ clearInterval(iv); reject(new Error('Firebase reageerde niet op tijd — controleer je firebaseConfig.')); }, 12000);
+  });
+}
+
+async function loadAll(){
+  const { doc, getDoc, db } = window.__firestore;
+  try{
+    const s = await getDoc(doc(db,'chirokas','settings'));
+    if(s.exists()) settings = { ...settings, ...s.data() };
+  }catch(e){}
+  try{
+    const m = await getDoc(doc(db,'chirokas','members'));
+    if(m.exists()) members = m.data().list || [];
+  }catch(e){}
+  try{
+    const l = await getDoc(doc(db,'chirokas','ledger'));
+    if(l.exists()) ledger = l.data().list || [];
+  }catch(e){}
+}
+async function saveSettings(){
+  try{ const { doc, setDoc, db } = window.__firestore; await setDoc(doc(db,'chirokas','settings'), settings); }
+  catch(e){ toast('Opslaan mislukt, probeer opnieuw.'); }
+}
+async function saveMembers(){
+  try{ const { doc, setDoc, db } = window.__firestore; await setDoc(doc(db,'chirokas','members'), { list: members }); }
+  catch(e){ toast('Opslaan mislukt, probeer opnieuw.'); }
+}
+async function saveLedger(){
+  try{ const { doc, setDoc, db } = window.__firestore; await setDoc(doc(db,'chirokas','ledger'), { list: ledger }); }
+  catch(e){ toast('Opslaan mislukt, probeer opnieuw.'); }
+}
+
+/* ---------- Belgian OGM (gestructureerde mededeling) ---------- */
+function generateOGM(){
+  const seq = settings.nextRef || 1;
+  const base = String(seq).padStart(10,'0');
+  let rem = parseInt(base,10) % 97;
+  if(rem===0) rem = 97;
+  const checksum = String(rem).padStart(2,'0');
+  const full = base + checksum;
+  const formatted = `+++${full.slice(0,3)}/${full.slice(3,7)}/${full.slice(7,12)}+++`;
+  return { raw: full, formatted };
+}
+
+/* ---------- IBAN mod-97 check (ISO 7064) ---------- */
+function ibanValid(iban){
+  const clean = (iban||'').replace(/\s+/g,'').toUpperCase();
+  if(clean.length < 15 || !/^[A-Z]{2}[0-9A-Z]+$/.test(clean)) return false;
+  const rearr = clean.slice(4) + clean.slice(0,4);
+  let numStr = '';
+  for(const ch of rearr){
+    if(/[0-9]/.test(ch)) numStr += ch;
+    else numStr += (ch.charCodeAt(0) - 55).toString();
+  }
+  let rem = 0;
+  for(const d of numStr){ rem = (rem*10 + parseInt(d,10)) % 97; }
+  return rem === 1;
+}
+
+/* ---------- EPC QR payload ---------- */
+function buildEpcPayload(amount, ogmRaw){
+  const iban = (settings.iban||'').replace(/\s+/g,'').toUpperCase();
+  const name = (settings.rekeninghouder || settings.naam || '').slice(0,70);
+  const amt = 'EUR' + Number(amount).toFixed(2);
+  const lines = ['BCD','002','1','SCT', settings.bic ? settings.bic.replace(/\s+/g,'').toUpperCase() : '', name, iban, amt, '', ogmRaw, ''];
+  return lines.join('\n');
+}
+
+/* ---------- Formatting ---------- */
+function euro(n){ return '€ ' + Number(n||0).toLocaleString('nl-BE',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function todayStr(){ return new Date().toISOString().slice(0,10); }
+
+/* ---------- Categories ---------- */
+const INCOME_CATS = ['Lidgeld','Kampinschrijving','Activiteiten','Subsidies','Giften','Overige inkomsten'];
+const EXPENSE_CATS = ['Materiaal','Kamp','Verzekering','Lokalen','Vorming leiding','Eten & drank','Overige kosten'];
+
+/* ---------- Toast ---------- */
+let toastTimer;
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove('show'), 2600);
+}
+
+/* ---------- State ---------- */
+let activeTab = 'dashboard';
+
+function setTab(tab){ activeTab = tab; render(); }
+
+/* ---------- Render root ---------- */
+function render(){
+  const app = document.getElementById('app');
+  const balance = ledger.filter(e=>!e.isTest).reduce((s,e)=> s + (e.type==='in'? e.bedrag : -e.bedrag), 0);
+  app.innerHTML = `
+    <div class="header">
+      <div class="header-top">
+        <div>
+          <p class="header-eyebrow">Chirokas</p>
+          <h1 class="header-title">${settings.naam ? escapeHtml(settings.naam) : 'Jouw Chiro'}</h1>
+        </div>
+        <div class="header-balance">
+          <div class="amt tnum">${euro(balance)}</div>
+          <div class="lbl">huidig saldo</div>
+        </div>
+      </div>
+    </div>
+    ${settings.testMode ? `<div class="test-banner"><span>🧪 Testmodus actief — nieuwe leden en boekingen worden gemarkeerd als test en tellen niet mee in het echte saldo.</span><button onclick="toggleTestMode()">Zet uit</button></div>` : ''}
+    <div class="nav">
+      <button data-tab="dashboard" class="${activeTab==='dashboard'?'active':''}">Overzicht</button>
+      <button data-tab="leden" class="${activeTab==='leden'?'active':''}">Leden</button>
+      <button data-tab="boekhouding" class="${activeTab==='boekhouding'?'active':''}">Boekhouding</button>
+      <button data-tab="mailing" class="${activeTab==='mailing'?'active':''}">Mailing</button>
+      <button data-tab="instellingen" class="${activeTab==='instellingen'?'active':''}">Instellingen</button>
+    </div>
+    <div id="section-dashboard" class="section ${activeTab==='dashboard'?'active':''}"></div>
+    <div id="section-leden" class="section ${activeTab==='leden'?'active':''}"></div>
+    <div id="section-boekhouding" class="section ${activeTab==='boekhouding'?'active':''}"></div>
+    <div id="section-mailing" class="section ${activeTab==='mailing'?'active':''}"></div>
+    <div id="section-instellingen" class="section ${activeTab==='instellingen'?'active':''}"></div>
+    <p class="footnote">Gegevens van Chirokas worden gedeeld tussen alle leiding die deze app opent — iedereen ziet en bewerkt dezelfde ledenlijst en boekhouding.</p>
+  `;
+  app.querySelectorAll('.nav button').forEach(b=> b.onclick = ()=> setTab(b.dataset.tab));
+  renderDashboard();
+  renderLeden();
+  renderBoekhouding();
+  renderMailing();
+  renderInstellingen();
+}
+
+function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s??''; return d.innerHTML; }
+
+async function toggleTestMode(){
+  settings.testMode = !settings.testMode;
+  await saveSettings();
+  render();
+  toast(settings.testMode ? 'Testmodus aan.' : 'Testmodus uit.');
+}
+
+/* ---------- Dashboard ---------- */
+function renderDashboard(){
+  const el = document.getElementById('section-dashboard');
+  const year = new Date().getFullYear();
+  const real = ledger.filter(e=>!e.isTest);
+  const thisYear = real.filter(e=> e.datum.slice(0,4)===String(year));
+  const inc = thisYear.filter(e=>e.type==='in').reduce((s,e)=>s+e.bedrag,0);
+  const exp = thisYear.filter(e=>e.type==='out').reduce((s,e)=>s+e.bedrag,0);
+  const openstaand = members.filter(m=>!m.paidThisYear && !m.isTest).length;
+  const recent = [...real].sort((a,b)=> b.datum.localeCompare(a.datum)).slice(0,6);
+
+  const testEntries = ledger.filter(e=>e.isTest);
+  const testMembers = members.filter(m=>m.isTest);
+  const testNet = testEntries.reduce((s,e)=> s + (e.type==='in'? e.bedrag : -e.bedrag), 0);
+
+  el.innerHTML = `
+    ${(testEntries.length>0 || testMembers.length>0) ? `<div class="test-banner"><span>🧪 ${testMembers.length} testlid/leden en ${testEntries.length} testboeking(en) (samen ${euro(testNet)}) tellen hier bewust niet mee. Te zien in "Boekhouding" en "Leden", op te ruimen bij "Instellingen".</span></div>` : ''}
+    <div class="stat-grid">
+      <div class="stat income"><div class="v tnum">${euro(inc)}</div><div class="k">Inkomsten ${year}</div></div>
+      <div class="stat expense"><div class="v tnum">${euro(exp)}</div><div class="k">Uitgaven ${year}</div></div>
+      <div class="stat"><div class="v tnum">${openstaand}</div><div class="k">Openstaande lidgelden</div></div>
+    </div>
+    <div class="card">
+      <h3 class="card-title">Recente bewegingen</h3>
+      ${recent.length===0 ? `<p class="empty">Nog geen boekingen. Voeg leden toe of registreer een uitgave in "Boekhouding".</p>` :
+        `<div class="table-scroll"><table><thead><tr><th>Datum</th><th>Omschrijving</th><th>Categorie</th><th style="text-align:right;">Bedrag</th></tr></thead><tbody>
+          ${recent.map(e=>`<tr><td class="tnum">${e.datum}</td><td>${escapeHtml(e.omschrijving)}</td><td><span class="cat-tag">${escapeHtml(e.categorie)}</span></td><td style="text-align:right;" class="tnum ${e.type==='in'?'amt-in':'amt-out'}">${e.type==='in'?'+':'-'}${euro(e.bedrag)}</td></tr>`).join('')}
+        </tbody></table></div>`}
+    </div>
+  `;
+}
+
+/* ---------- Leden ---------- */
+function renderLeden(){
+  const el = document.getElementById('section-leden');
+  el.innerHTML = `
+    <div class="card">
+      <h3 class="card-title">Nieuw lid</h3>
+      <div class="row2">
+        <div class="field"><label>Naam lid</label><input id="nl-naam" type="text" placeholder="Voornaam Achternaam"></div>
+        <div class="field"><label>Standaard lidgeld</label><input id="nl-bedrag" type="number" step="0.01" placeholder="30.00"></div>
+      </div>
+      <div class="field"><label>E-mail ouder (optioneel)</label><input id="nl-email" type="email" placeholder="ouder@voorbeeld.be"></div>
+      <button class="btn btn-primary btn-block" onclick="addMember()">Lid toevoegen</button>
+    </div>
+    <div class="card">
+      <h3 class="card-title">Leden importeren uit Excel</h3>
+      <p class="muted">Kolommen <b>Naam</b>, <b>Lidgeld</b> en optioneel <b>E-mail</b> — volgorde en hoofdletters maken niet uit. Een lid met een naam die al bestaat wordt bijgewerkt in plaats van dubbel toegevoegd.</p>
+      <input id="xl-file" type="file" accept=".xlsx,.xls,.csv" style="margin-top:8px;" onchange="handleExcelImport(event)">
+      <div id="xl-status" class="muted" style="margin-top:8px;"></div>
+    </div>
+    <div id="member-list"></div>
+  `;
+  const list = document.getElementById('member-list');
+  if(members.length===0){
+    list.innerHTML = `<p class="empty">Nog geen leden toegevoegd.</p>`;
+    return;
+  }
+  list.innerHTML = members.map((m,i)=>`
+    <div class="member-card ${m.paidThisYear?'paid':'due'}">
+      <div>
+        <div class="member-name">${escapeHtml(m.naam)}</div>
+        <div class="member-sub">Lidgeld ${euro(m.bedrag)} ${m.email? '· '+escapeHtml(m.email):''}</div>
+      </div>
+      <div class="member-actions">
+        ${m.isTest ? '<span class="pill test">Test</span>' : ''}
+        <span class="pill ${m.paidThisYear?'paid':'due'}">${m.paidThisYear?'Betaald':'Openstaand'}</span>
+        <button class="btn btn-ghost btn-sm" onclick="openQr(${i})">Betaalverzoek</button>
+        <button class="del-x" title="Verwijder lid" onclick="removeMember(${i})">✕</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function addMember(){
+  const naam = document.getElementById('nl-naam').value.trim();
+  const bedrag = parseFloat(document.getElementById('nl-bedrag').value);
+  const email = document.getElementById('nl-email').value.trim();
+  if(!naam){ toast('Geef een naam in.'); return; }
+  if(!bedrag || bedrag<=0){ toast('Geef een geldig lidgeldbedrag in.'); return; }
+  members.push({ naam, bedrag, email, paidThisYear:false, isTest: !!settings.testMode });
+  await saveMembers();
+  render();
+  toast(settings.testMode ? 'Testlid toegevoegd.' : 'Lid toegevoegd.');
+}
+async function removeMember(i){
+  if(!confirm(`"${members[i].naam}" verwijderen?`)) return;
+  members.splice(i,1);
+  await saveMembers();
+  render();
+}
+
+/* ---------- Excel import ---------- */
+function findKey(row, patterns){
+  const keys = Object.keys(row);
+  for(const p of patterns){
+    const hit = keys.find(k => p.test(k.trim()));
+    if(hit) return hit;
+  }
+  return null;
+}
+async function handleExcelImport(evt){
+  const file = evt.target.files[0];
+  const status = document.getElementById('xl-status');
+  if(!file) return;
+  if(typeof XLSX === 'undefined'){
+    status.textContent = 'Excel-bibliotheek kon niet geladen worden. Probeer opnieuw of controleer je internetverbinding.';
+    return;
+  }
+  status.textContent = 'Bestand wordt ingelezen…';
+  try{
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type:'array' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval:'' });
+    if(rows.length === 0){ status.textContent = 'Geen rijen gevonden in dit bestand.'; return; }
+
+    let added = 0, updated = 0, skipped = 0;
+    for(const row of rows){
+      const naamKey = findKey(row, [/^naam$/i, /name/i]);
+      const bedragKey = findKey(row, [/lidgeld/i, /bedrag/i, /prijs/i, /amount/i]);
+      const emailKey = findKey(row, [/e-?mail/i]);
+      const naam = naamKey ? String(row[naamKey]).trim() : '';
+      if(!naam){ skipped++; continue; }
+      let bedrag = bedragKey ? parseFloat(String(row[bedragKey]).replace(',', '.')) : NaN;
+      if(isNaN(bedrag) || bedrag < 0) bedrag = 0;
+      const email = emailKey ? String(row[emailKey]).trim() : '';
+
+      const existing = members.findIndex(m => m.naam.trim().toLowerCase() === naam.toLowerCase());
+      if(existing >= 0){
+        members[existing].bedrag = bedrag || members[existing].bedrag;
+        if(email) members[existing].email = email;
+        updated++;
+      }else{
+        members.push({ naam, bedrag, email, paidThisYear:false, isTest: !!settings.testMode });
+        added++;
+      }
+    }
+    await saveMembers();
+    render();
+    let msg = `${added} lid/leden toegevoegd, ${updated} bijgewerkt.`;
+    if(skipped) msg += ` ${skipped} rij(en) zonder naam overgeslagen.`;
+    toast(msg);
+    document.getElementById('xl-status') && (document.getElementById('xl-status').textContent = msg);
+  }catch(e){
+    status.textContent = 'Kon dit bestand niet inlezen. Controleer of het een geldig Excel- of CSV-bestand is.';
+  }
+  evt.target.value = '';
+}
+
+/* ---------- Mailing ---------- */
+let mailingOnlyOpen = true;
+function slug(s){ return (s||'lid').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'') || 'lid'; }
+
+function renderMailing(){
+  const el = document.getElementById('section-mailing');
+  const withEmail = members.filter(m=>!m.isTest && m.email && m.email.trim());
+  const eligible = withEmail.filter(m=> !mailingOnlyOpen || !m.paidThisYear);
+  const noEmail = members.filter(m=>!m.isTest && (!m.email || !m.email.trim()));
+  const ibanOk = settings.iban && ibanValid(settings.iban);
+
+  el.innerHTML = `
+    <div class="card">
+      <h3 class="card-title">Betaalverzoeken mailen</h3>
+      <p class="muted">Voor elk lid opent dit je eigen mailprogramma met een kant-en-klare mail: bedrag, rekeningnummer en gestructureerde mededeling staan al in de tekst. Wil je ook de scanbare QR-code meesturen? Download die eerst en voeg ze als bijlage toe voor je verzendt — een browser kan een bijlage niet automatisch toevoegen. Jij bekijkt en verstuurt elke mail zelf.</p>
+      ${!ibanOk ? `<p class="badge-warn" style="margin-top:8px;">⚠ Vul eerst een geldig IBAN in bij Instellingen.</p>` : ''}
+      <label style="display:flex; align-items:center; gap:8px; margin-top:12px; font-weight:600; font-size:13px; color:var(--ink-soft);">
+        <input type="checkbox" id="mailing-filter" ${mailingOnlyOpen?'checked':''} onchange="toggleMailingFilter()" style="width:auto;">
+        Enkel leden met openstaand lidgeld tonen
+      </label>
+    </div>
+    ${eligible.length===0 ? `<p class="empty">Geen leden met e-mailadres ${mailingOnlyOpen?'die nog moeten betalen':''} gevonden.</p>` :
+      eligible.map(m=>{
+        const i = members.indexOf(m);
+        return `
+        <div class="member-card ${m.paidThisYear?'paid':'due'}">
+          <div>
+            <div class="member-name">${escapeHtml(m.naam)}</div>
+            <div class="member-sub">${escapeHtml(m.email)} · ${euro(m.bedrag)} ${m.reminderSentAt ? '· verstuurd op '+new Date(m.reminderSentAt).toLocaleDateString('nl-BE') : ''}</div>
+          </div>
+          <div class="member-actions">
+            ${m.reminderSentAt ? '<span class="pill paid">Verzonden</span>' : ''}
+            <button class="btn btn-ghost btn-sm" onclick="downloadMemberQr(${i})" ${!ibanOk?'disabled':''}>QR downloaden</button>
+            <button class="btn btn-primary btn-sm" onclick="openMailDraft(${i})" ${!ibanOk?'disabled':''}>Open e-mail</button>
+          </div>
+        </div>`;
+      }).join('')
+    }
+    ${noEmail.length>0 ? `<p class="muted" style="margin-top:6px;">Geen e-mailadres bekend voor: ${noEmail.map(m=>escapeHtml(m.naam)).join(', ')}.</p>` : ''}
+  `;
+}
+function toggleMailingFilter(){ mailingOnlyOpen = document.getElementById('mailing-filter').checked; renderMailing(); }
+
+async function downloadMemberQr(i){
+  const m = members[i];
+  if(!settings.iban || !ibanValid(settings.iban)){ toast('Vul eerst een geldig IBAN in bij Instellingen.'); return; }
+  if(typeof QRCode === 'undefined'){ toast('QR-bibliotheek niet geladen.'); return; }
+  const ogm = generateOGM();
+  const payload = buildEpcPayload(m.bedrag, ogm.raw);
+  const hidden = document.createElement('div');
+  hidden.style.position='fixed'; hidden.style.left='-9999px';
+  document.body.appendChild(hidden);
+  try{
+    new QRCode(hidden, { text: payload, width:300, height:300, correctLevel: QRCode.CorrectLevel.M });
+    const img = hidden.querySelector('img');
+    const canvas = hidden.querySelector('canvas');
+    const dataUrl = img && img.src ? img.src : (canvas ? canvas.toDataURL('image/png') : null);
+    if(!dataUrl) throw new Error('geen QR gegenereerd');
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = `betaal-qr-${slug(m.naam)}.png`;
+    document.body.appendChild(a); a.click(); a.remove();
+  }catch(e){
+    toast('QR-code kon niet gedownload worden.');
+  }
+  document.body.removeChild(hidden);
+  settings.nextRef = (settings.nextRef||1) + 1;
+  await saveSettings();
+}
+
+async function openMailDraft(i){
+  const m = members[i];
+  if(!settings.iban || !ibanValid(settings.iban)){ toast('Vul eerst een geldig IBAN in bij Instellingen.'); return; }
+  if(!m.email){ toast('Dit lid heeft geen e-mailadres.'); return; }
+  const ogm = generateOGM();
+  const chiroNaam = settings.naam || 'de Chiro';
+  const subject = `Lidgeld ${chiroNaam} — ${m.naam}`;
+  const body = `Beste,\n\nGraag ontvangen we het lidgeld voor ${m.naam}.\n\nBedrag: ${euro(m.bedrag)}\nRekeningnummer: ${settings.iban}\nMededeling: ${ogm.formatted}\n\nJe kan overschrijven met bovenstaande gegevens, of de meegestuurde QR-code scannen met je bankapp voor een automatisch ingevulde overschrijving.\n\nAlvast bedankt!\n${chiroNaam}`;
+  const mailUrl = `mailto:${m.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  window.location.href = mailUrl;
+  settings.nextRef = (settings.nextRef||1) + 1;
+  await saveSettings();
+  setTimeout(()=>{ if(confirm(`Mail geopend voor ${m.naam}. Markeren als verstuurd?`)) markMailSent(i); }, 800);
+}
+async function markMailSent(i){
+  members[i].reminderSentAt = new Date().toISOString();
+  await saveMembers();
+  render();
+}
+
+/* ---------- QR modal ---------- */
+let qrCtx = null;
+function openQr(i){
+  const m = members[i];
+  qrCtx = { memberIndex:i, amount:m.bedrag };
+  document.getElementById('qr-modal').classList.add('open');
+  renderQrModal();
+}
+function openTestQr(){
+  qrCtx = { memberIndex:-1, amount:1.00 };
+  document.getElementById('qr-modal').classList.add('open');
+  renderQrModal();
+}
+function closeQrModal(){ document.getElementById('qr-modal').classList.remove('open'); qrCtx=null; }
+
+function renderQrModal(){
+  const body = document.getElementById('qr-modal-body');
+  const isProef = qrCtx.memberIndex === -1;
+  const m = isProef ? { naam:'Proefbetaling' } : members[qrCtx.memberIndex];
+  if(!settings.iban || !ibanValid(settings.iban)){
+    body.innerHTML = `<p class="muted">Vul eerst een geldig IBAN-rekeningnummer van de Chiro in bij <b>Instellingen</b> voordat je een betaalverzoek kan maken.</p>`;
+    return;
+  }
+  const ogm = generateOGM();
+  body.innerHTML = `
+    ${isProef ? `<p class="muted">Dit is een proefbetaling om te testen of de QR-code correct werkt met jullie rekening. Ze wordt niet aan een lid gekoppeld en telt niet mee in het echte saldo.</p>` : `<p class="muted">Voor <b>${escapeHtml(m.naam)}</b></p>`}
+    <div class="field"><label>Bedrag</label><input id="qr-bedrag" type="number" step="0.01" value="${qrCtx.amount}"></div>
+    <button class="btn btn-primary btn-block" onclick="generateQr('${ogm.raw}','${ogm.formatted}')">QR-code genereren</button>
+    <div id="qr-output"></div>
+  `;
+}
+
+async function generateQr(ogmRaw, ogmFormatted){
+  const amount = parseFloat(document.getElementById('qr-bedrag').value);
+  if(!amount || amount<=0){ toast('Geef een geldig bedrag in.'); return; }
+  const payload = buildEpcPayload(amount, ogmRaw);
+  const out = document.getElementById('qr-output');
+  out.innerHTML = `
+    <div class="qr-card">
+      <div id="qr-canvas"></div>
+      <div class="ogm-code">${ogmFormatted}</div>
+      <p class="muted" style="margin-top:6px;">Scan met je bankapp, of gebruik de mededeling hierboven bij een handmatige overschrijving.</p>
+    </div>
+    <div class="copy-box" id="copy-text">Chiro-lidgeld — te betalen: ${euro(amount)}
+Rekeningnummer: ${settings.iban}
+Mededeling: ${ogmFormatted}</div>
+    <div class="row2" style="margin-top:10px;">
+      <button class="btn btn-ghost" onclick="copyPaymentText()">Kopieer tekst</button>
+      <button class="btn btn-primary" onclick="markPaid(${qrCtx.memberIndex}, ${amount}, '${ogmFormatted}')">Markeer als betaald</button>
+    </div>
+  `;
+  const qrHost = document.getElementById('qr-canvas');
+  qrHost.innerHTML='';
+  try{
+    if(typeof QRCode === 'undefined') throw new Error('QR-bibliotheek niet geladen');
+    new QRCode(qrHost, { text: payload, width:180, height:180, correctLevel: QRCode.CorrectLevel.M });
+  }catch(e){
+    qrHost.innerHTML = '<p class="muted">QR-code kon niet geladen worden — gebruik de mededeling en rekeninggegevens hieronder om manueel over te schrijven.</p>';
+  }
+  settings.nextRef = (settings.nextRef||1) + 1;
+  await saveSettings();
+}
+
+function copyPaymentText(){
+  const txt = document.getElementById('copy-text').innerText;
+  navigator.clipboard?.writeText(txt).then(()=> toast('Tekst gekopieerd.')).catch(()=> toast('Kopiëren niet gelukt.'));
+}
+
+async function markPaid(i, amount, ogmFormatted){
+  const isProef = i === -1;
+  const isTest = isProef ? true : !!members[i].isTest;
+  let omschrijving;
+  if(isProef){
+    omschrijving = `Proefbetaling (${ogmFormatted})`;
+  } else {
+    members[i].paidThisYear = true;
+    await saveMembers();
+    omschrijving = `Lidgeld ${members[i].naam} (${ogmFormatted})`;
+  }
+  ledger.push({ id: Date.now(), datum: todayStr(), omschrijving, categorie:'Lidgeld', bedrag: amount, type:'in', isTest });
+  await saveLedger();
+  closeQrModal();
+  render();
+  toast(isTest ? 'Testbetaling geregistreerd — telt niet mee in het echte saldo.' : 'Betaling geregistreerd in de boekhouding.');
+}
+
+/* ---------- Boekhouding ---------- */
+function renderBoekhouding(){
+  const el = document.getElementById('section-boekhouding');
+  const sorted = [...ledger].sort((a,b)=> b.datum.localeCompare(a.datum));
+  const realBalance = ledger.filter(e=>!e.isTest).reduce((s,e)=> s + (e.type==='in'? e.bedrag : -e.bedrag), 0);
+  const testEntries = ledger.filter(e=>e.isTest);
+  const testNet = testEntries.reduce((s,e)=> s + (e.type==='in'? e.bedrag : -e.bedrag), 0);
+  el.innerHTML = `
+    <div class="card">
+      <h3 class="card-title">Nieuwe boeking</h3>
+      <div class="row2">
+        <div class="field"><label>Type</label>
+          <select id="lg-type" onchange="fillLgCats()">
+            <option value="in">Inkomst</option>
+            <option value="out">Uitgave</option>
+          </select>
+        </div>
+        <div class="field"><label>Datum</label><input id="lg-datum" type="date" value="${todayStr()}"></div>
+      </div>
+      <div class="field"><label>Omschrijving</label><input id="lg-omschrijving" type="text" placeholder="bv. Aankoop knutselmateriaal"></div>
+      <div class="row2">
+        <div class="field"><label>Categorie</label><select id="lg-categorie"></select></div>
+        <div class="field"><label>Bedrag</label><input id="lg-bedrag" type="number" step="0.01" placeholder="0.00"></div>
+      </div>
+      <button class="btn btn-primary btn-block" onclick="addLedgerEntry()">Boeking toevoegen</button>
+    </div>
+    <div class="card">
+      <h3 class="card-title">Alle boekingen</h3>
+      <p class="muted" style="margin-bottom:10px;">Echt saldo (telt mee in Overzicht): <b class="tnum" style="color:var(--ink);">${euro(realBalance)}</b>${testEntries.length>0 ? ` · <span style="color:#8A6D1D;">waarvan ${euro(testNet)} in ${testEntries.length} testboeking(en) hieronder niet meegerekend</span>` : ''}</p>
+      ${sorted.length===0 ? `<p class="empty">Nog geen boekingen.</p>` :
+        `<div class="table-scroll"><table><thead><tr><th>Datum</th><th>Omschrijving</th><th>Categorie</th><th style="text-align:right;">Bedrag</th><th></th></tr></thead><tbody>
+        ${sorted.map(e=>`<tr><td class="tnum">${e.datum}</td><td>${escapeHtml(e.omschrijving)} ${e.isTest?'<span class="pill test">Test</span>':''}</td><td><span class="cat-tag">${escapeHtml(e.categorie)}</span></td><td style="text-align:right;" class="tnum ${e.type==='in'?'amt-in':'amt-out'}">${e.type==='in'?'+':'-'}${euro(e.bedrag)}</td><td><button class="del-x" onclick="removeLedgerEntry(${e.id})">✕</button></td></tr>`).join('')}
+        </tbody></table></div>`}
+    </div>
+  `;
+  fillLgCats();
+}
+function fillLgCats(){
+  const type = document.getElementById('lg-type')?.value || 'in';
+  const sel = document.getElementById('lg-categorie');
+  if(!sel) return;
+  const cats = type==='in' ? INCOME_CATS : EXPENSE_CATS;
+  sel.innerHTML = cats.map(c=>`<option value="${c}">${c}</option>`).join('');
+}
+async function addLedgerEntry(){
+  const type = document.getElementById('lg-type').value;
+  const datum = document.getElementById('lg-datum').value || todayStr();
+  const omschrijving = document.getElementById('lg-omschrijving').value.trim();
+  const categorie = document.getElementById('lg-categorie').value;
+  const bedrag = parseFloat(document.getElementById('lg-bedrag').value);
+  if(!omschrijving){ toast('Geef een omschrijving in.'); return; }
+  if(!bedrag || bedrag<=0){ toast('Geef een geldig bedrag in.'); return; }
+  ledger.push({ id: Date.now(), datum, omschrijving, categorie, bedrag, type, isTest: !!settings.testMode });
+  await saveLedger();
+  render();
+  toast(settings.testMode ? 'Testboeking toegevoegd.' : 'Boeking toegevoegd.');
+}
+async function removeLedgerEntry(id){
+  ledger = ledger.filter(e=>e.id!==id);
+  await saveLedger();
+  render();
+}
+
+/* ---------- Instellingen ---------- */
+function renderInstellingen(){
+  const el = document.getElementById('section-instellingen');
+  const validIban = settings.iban ? ibanValid(settings.iban) : null;
+  el.innerHTML = `
+    <div class="card">
+      <h3 class="card-title">Chirogegevens</h3>
+      <div class="field"><label>Naam van de Chiro</label><input id="st-naam" type="text" value="${escapeHtml(settings.naam||'')}" placeholder="Chiro ..."></div>
+      <div class="field"><label>Naam rekeninghouder (op de overschrijving)</label><input id="st-houder" type="text" value="${escapeHtml(settings.rekeninghouder||'')}" placeholder="Chiro ... vzw"></div>
+      <div class="field"><label>IBAN rekeningnummer</label><input id="st-iban" type="text" value="${escapeHtml(settings.iban||'')}" placeholder="BE00 0000 0000 0000">
+        ${validIban===true?'<div class="badge-check">✓ geldig IBAN</div>':''}
+        ${validIban===false?'<div class="badge-warn">⚠ dit IBAN-nummer lijkt ongeldig</div>':''}
+      </div>
+      <div class="field"><label>BIC (optioneel)</label><input id="st-bic" type="text" value="${escapeHtml(settings.bic||'')}" placeholder="GEBABEBB"></div>
+      <button class="btn btn-primary btn-block" onclick="saveInstellingen()">Opslaan</button>
+    </div>
+    <div class="card">
+      <h3 class="card-title">Over betalingen ontvangen</h3>
+      <p class="muted">Chirokas maakt gewone Europese overschrijvingen aan met een unieke gestructureerde mededeling per betaling — via QR-code, scanbaar met zowat elke Belgische bankapp. Dat kost niets extra: het is een gewone overschrijving, geen betaalplatform met transactiekosten. Betalingen worden pas op "betaald" gezet wanneer de leiding dit manueel bevestigt (bv. na controle op de rekening).</p>
+    </div>
+    <div class="card">
+      <h3 class="card-title">Testen</h3>
+      <div class="toggle-row">
+        <div>
+          <div style="font-weight:600; font-size:13.5px;">Testmodus</div>
+          <p class="muted">Nieuwe leden en boekingen worden gemarkeerd als test en tellen niet mee in het echte saldo.</p>
+        </div>
+        <label class="switch"><input type="checkbox" ${settings.testMode?'checked':''} onchange="toggleTestMode()"><span class="track"></span></label>
+      </div>
+      <button class="btn btn-ghost btn-block" style="margin-top:12px;" onclick="openTestQr()">Proefbetaling proberen (QR-code testen)</button>
+      <p class="muted" style="margin-top:8px;">Genereert een losse test-QR met een zelf gekozen bedrag, los van een lid — handig om te controleren of jullie bankrekening en bankapp de QR-code correct herkennen voor jullie live gaan.</p>
+      ${(members.some(m=>m.isTest) || ledger.some(e=>e.isTest)) ? `<button class="btn btn-ghost btn-block" style="margin-top:10px;" onclick="clearTestData()">Verwijder alleen testgegevens</button>` : ''}
+    </div>
+    <div class="card">
+      <h3 class="card-title">Gegevens wissen</h3>
+      <p class="muted">Verwijdert alle leden en boekingen voor iedereen die deze app gebruikt. Dit kan niet ongedaan gemaakt worden.</p>
+      <button class="btn btn-danger" onclick="resetAll()">Alles wissen</button>
+    </div>
+  `;
+}
+async function saveInstellingen(){
+  settings.naam = document.getElementById('st-naam').value.trim();
+  settings.rekeninghouder = document.getElementById('st-houder').value.trim();
+  settings.iban = document.getElementById('st-iban').value.trim();
+  settings.bic = document.getElementById('st-bic').value.trim();
+  await saveSettings();
+  render();
+  toast('Instellingen opgeslagen.');
+}
+async function resetAll(){
+  if(!confirm('Weet je zeker dat je alle leden en boekingen wil wissen voor iedereen?')) return;
+  members = []; ledger = [];
+  await saveMembers(); await saveLedger();
+  render();
+  toast('Gegevens gewist.');
+}
+async function clearTestData(){
+  if(!confirm('Alle testleden en testboekingen verwijderen? Echte gegevens blijven staan.')) return;
+  members = members.filter(m=>!m.isTest);
+  ledger = ledger.filter(e=>!e.isTest);
+  await saveMembers(); await saveLedger();
+  render();
+  toast('Testgegevens verwijderd.');
+}
+
+/* ---------- Init ---------- */
+(async function init(){
+  try{
+    await waitForFirestore();
+    await loadAll();
+    render();
+  }catch(e){
+    document.getElementById('app').innerHTML = `<div class="loading">Kon geen verbinding maken met de database.<br>Controleer of firebaseConfig in index.html correct is ingevuld.<br><small>${escapeHtml(e.message||'')}</small></div>`;
+  }
+})();
+</script>
+</body>
+</html>
