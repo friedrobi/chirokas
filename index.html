@@ -138,11 +138,17 @@
   /* Nav */
   .nav{ display:flex; gap:6px; margin-bottom:20px; background:var(--rope); padding:5px; border-radius:12px; }
   .nav button{
-    flex:1; border:none; background:transparent; color:var(--forest-dark);
+    flex:1; min-width:0; border:none; background:transparent; color:var(--forest-dark);
     padding:9px 8px; border-radius:8px; font-weight:600; font-size:13.5px;
     transition:background .15s, color .15s;
   }
   .nav button.active{ background:var(--card); color:var(--campfire-dark); box-shadow:var(--shadow); }
+
+  @media (max-width:560px){
+    .nav{ overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+    .nav::-webkit-scrollbar{ display:none; }
+    .nav button{ flex:0 0 auto; white-space:nowrap; padding:9px 14px; }
+  }
 
   .section{ display:none; animation: fadein .25s ease; }
   .section.active{ display:block; }
