@@ -44,6 +44,48 @@ van op de tijdelijke opslag van een Claude-artifact.
    Klik op **Publiceren**. Nu kan enkel wie via de app is aangemeld
    (automatisch en onzichtbaar dankzij stap 3) lezen en schrijven.
 
+6. **Storage inschakelen (voor bijlagen bij boekingen)**
+   In het linkermenu: **Build > Storage > Get started**. Start in
+   testmodus, zelfde regio als je Firestore. Ga daarna naar het
+   tabblad **Rules** en vervang de inhoud door:
+   ```
+   rules_version = '2';
+   service firebase.storage {
+     match /b/{bucket}/o {
+       match /bijlagen/{allPaths=**} {
+         allow read, write: if request.auth != null;
+       }
+     }
+   }
+   ```
+   Klik op **Publiceren**. Gratis tot 5GB opslag — ruim voldoende voor
+   foto's en PDF's van bonnetjes en facturen.
+
+## E-mails automatisch versturen (EmailJS)
+
+Standaard opent "Open e-mail" gewoon je eigen mailprogramma — dat werkt
+altijd, zonder verdere instellingen. Wil je ook automatisch kunnen
+versturen (handig voor de "Verstuur naar alle leden"-knop), dan heb je
+een gratis EmailJS-account nodig:
+
+1. Maak een gratis account op [emailjs.com](https://www.emailjs.com)
+   (tot 200 mails/maand gratis — ruim voldoende voor een Chiro).
+2. **Email Services > Add New Service**: koppel het mailadres waarmee je
+   wil versturen (bv. een Gmail-account van de Chiro). Onthoud de
+   **Service ID**.
+3. **Email Templates > Create New Template**: zet het veld **Subject**
+   op `{{subject}}` en de inhoud van het bericht op `{{message}}` (de
+   ontvanger komt uit `{{to_email}}`, de naam uit `{{to_name}}` — die
+   hoef je zelf niet in de template te typen, enkel te weten dat ze
+   bestaan als je het sjabloon verder wil opmaken). Onthoud de
+   **Template ID**.
+4. **Account > General**: kopieer je **Public Key**.
+5. Vul deze drie waarden in bovenaan `index.html`, op de plaats van
+   `EMAILJS_PUBLIC_KEY`, `EMAILJS_SERVICE_ID` en `EMAILJS_TEMPLATE_ID`.
+
+Zonder deze stappen blijft "Open e-mail" gewoon werken — enkel de
+"Verstuur"-knoppen en de bulkverzending vereisen deze koppeling.
+
 ## Hosten (gratis)
 
 Kies één van beide — beide zijn gratis en werken met deze bestanden zoals ze zijn:

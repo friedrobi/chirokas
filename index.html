@@ -24,6 +24,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
   import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
   import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+  import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyBQDr0BuVS72KCBNMOyFSnjR3735TkpEMc",
@@ -37,10 +38,12 @@
   const fbApp = initializeApp(firebaseConfig);
   const db = getFirestore(fbApp);
   const auth = getAuth(fbApp);
+  const storage = getStorage(fbApp);
 
   onAuthStateChanged(auth, (user) => {
     if (user) {
       window.__firestore = { doc, getDoc, setDoc, db };
+      window.__storage = { storage, storageRef, uploadBytes, getDownloadURL };
       window.__firestoreReady = true;
     }
   });
@@ -51,6 +54,22 @@
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(()=>{}));
+  }
+</script>
+
+<!-- ============================================================
+     E-MAIL VERSTUREN (EmailJS)
+     Vul hieronder je eigen EmailJS-gegevens in (dashboard.emailjs.com
+     > Email Services / Email Templates / Account > General).
+     Zie README.md voor de volledige stap-voor-stap uitleg.
+     ============================================================ -->
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script>
+  const EMAILJS_PUBLIC_KEY = 'VUL_HIER_IN';
+  const EMAILJS_SERVICE_ID = 'VUL_HIER_IN';
+  const EMAILJS_TEMPLATE_ID = 'VUL_HIER_IN';
+  if (typeof emailjs !== 'undefined' && EMAILJS_PUBLIC_KEY !== 'VUL_HIER_IN') {
+    emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
   }
 </script>
 <style>
@@ -584,12 +603,14 @@ function renderMailing(){
   el.innerHTML = `
     <div class="card">
       <h3 class="card-title">Betaalverzoeken mailen</h3>
-      <p class="muted">Voor elk lid opent dit je eigen mailprogramma met een kant-en-klare mail: bedrag, rekeningnummer en gestructureerde mededeling staan al in de tekst. Wil je ook de scanbare QR-code meesturen? Download die eerst en voeg ze als bijlage toe voor je verzendt — een browser kan een bijlage niet automatisch toevoegen. Jij bekijkt en verstuurt elke mail zelf.</p>
+      <p class="muted">Voor elk lid staat het bedrag, rekeningnummer en gestructureerde mededeling al klaar in de mail. "Open e-mail" opent je eigen mailprogramma zodat je kan nalezen voor je verstuurt; "Verstuur" stuurt meteen automatisch via de gekoppelde mailservice.</p>
       ${!ibanOk ? `<p class="badge-warn" style="margin-top:8px;">⚠ Vul eerst een geldig IBAN in bij Instellingen.</p>` : ''}
+      ${!emailjsReady() ? `<p class="muted" style="margin-top:8px;">Automatisch versturen is nog niet ingesteld — zie README.md. "Open e-mail" werkt wel al zonder die instelling.</p>` : ''}
       <label style="display:flex; align-items:center; gap:8px; margin-top:12px; font-weight:600; font-size:13px; color:var(--ink-soft);">
         <input type="checkbox" id="mailing-filter" ${mailingOnlyOpen?'checked':''} onchange="toggleMailingFilter()" style="width:auto;">
         Enkel leden met openstaand lidgeld tonen
       </label>
+      ${eligible.length>0 && emailjsReady() ? `<button class="btn btn-primary btn-block" style="margin-top:12px;" onclick="sendAllMails()" ${!ibanOk?'disabled':''}>Verstuur naar alle ${eligible.length} getoonde leden</button>` : ''}
     </div>
     ${eligible.length===0 ? `<p class="empty">Geen leden met e-mailadres ${mailingOnlyOpen?'die nog moeten betalen':''} gevonden.</p>` :
       eligible.map(m=>{
@@ -603,7 +624,8 @@ function renderMailing(){
           <div class="member-actions">
             ${m.reminderSentAt ? '<span class="pill paid">Verzonden</span>' : ''}
             <button class="btn btn-ghost btn-sm" onclick="downloadMemberQr(${i})" ${!ibanOk?'disabled':''}>QR downloaden</button>
-            <button class="btn btn-primary btn-sm" onclick="openMailDraft(${i})" ${!ibanOk?'disabled':''}>Open e-mail</button>
+            <button class="btn btn-ghost btn-sm" onclick="openMailDraft(${i})" ${!ibanOk?'disabled':''}>Open e-mail</button>
+            ${emailjsReady() ? `<button class="btn btn-primary btn-sm" onclick="sendMemberEmail(${i})" ${!ibanOk?'disabled':''}>Verstuur</button>` : ''}
           </div>
         </div>`;
       }).join('')
@@ -653,14 +675,19 @@ async function downloadMemberQr(i){
   document.body.removeChild(hidden);
 }
 
+function buildMemberMailContent(m, ogm){
+  const chiroNaam = settings.naam || 'de Chiro';
+  const subject = `Lidgeld ${chiroNaam} — ${m.naam}`;
+  const body = `Beste,\n\nGraag ontvangen we het lidgeld voor ${m.naam}.\n\nBedrag: ${euro(m.bedrag)}\nRekeningnummer: ${settings.iban}\nMededeling: ${ogm.formatted}\n\nJe kan overschrijven met bovenstaande gegevens, of de QR-code in de app scannen met je bankapp voor een automatisch ingevulde overschrijving.\n\nAlvast bedankt!\n${chiroNaam}`;
+  return { subject, body };
+}
+
 async function openMailDraft(i){
   const m = members[i];
   if(!settings.iban || !ibanValid(settings.iban)){ toast('Vul eerst een geldig IBAN in bij Instellingen.'); return; }
   if(!m.email){ toast('Dit lid heeft geen e-mailadres.'); return; }
   const ogm = await ensureMemberOgm(i);
-  const chiroNaam = settings.naam || 'de Chiro';
-  const subject = `Lidgeld ${chiroNaam} — ${m.naam}`;
-  const body = `Beste,\n\nGraag ontvangen we het lidgeld voor ${m.naam}.\n\nBedrag: ${euro(m.bedrag)}\nRekeningnummer: ${settings.iban}\nMededeling: ${ogm.formatted}\n\nJe kan overschrijven met bovenstaande gegevens, of de meegestuurde QR-code scannen met je bankapp voor een automatisch ingevulde overschrijving.\n\nAlvast bedankt!\n${chiroNaam}`;
+  const { subject, body } = buildMemberMailContent(m, ogm);
   const mailUrl = `mailto:${m.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   window.location.href = mailUrl;
   setTimeout(()=>{ if(confirm(`Mail geopend voor ${m.naam}. Markeren als verstuurd?`)) markMailSent(i); }, 800);
@@ -669,6 +696,52 @@ async function markMailSent(i){
   members[i].reminderSentAt = new Date().toISOString();
   await saveMembers();
   render();
+}
+
+function emailjsReady(){
+  return typeof emailjs !== 'undefined' && EMAILJS_PUBLIC_KEY !== 'VUL_HIER_IN';
+}
+
+async function sendMemberEmail(i){
+  const m = members[i];
+  if(!settings.iban || !ibanValid(settings.iban)){ toast('Vul eerst een geldig IBAN in bij Instellingen.'); return; }
+  if(!m.email){ toast('Dit lid heeft geen e-mailadres.'); return; }
+  if(!emailjsReady()){ toast('E-mailservice is nog niet ingesteld — zie README.md.'); return; }
+  const ogm = await ensureMemberOgm(i);
+  const { subject, body } = buildMemberMailContent(m, ogm);
+  try{
+    await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, { to_email: m.email, to_name: m.naam, subject, message: body });
+    members[i].reminderSentAt = new Date().toISOString();
+    await saveMembers();
+    render();
+    toast(`Mail verstuurd naar ${m.naam}.`);
+  }catch(e){
+    toast(`Versturen naar ${m.naam} mislukt.`);
+  }
+}
+
+async function sendAllMails(){
+  if(!emailjsReady()){ toast('E-mailservice is nog niet ingesteld — zie README.md.'); return; }
+  if(!settings.iban || !ibanValid(settings.iban)){ toast('Vul eerst een geldig IBAN in bij Instellingen.'); return; }
+  const withEmail = members.filter(m=>!m.isTest && m.email && m.email.trim());
+  const eligible = withEmail.filter(m=> !mailingOnlyOpen || !m.paidThisYear);
+  if(eligible.length===0){ toast('Geen leden om naar te versturen.'); return; }
+  if(!confirm(`Mail versturen naar ${eligible.length} lid/leden?`)) return;
+  let sent=0, failed=0;
+  for(const m of eligible){
+    const i = members.indexOf(m);
+    try{
+      const ogm = await ensureMemberOgm(i);
+      const { subject, body } = buildMemberMailContent(members[i], ogm);
+      await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, { to_email: members[i].email, to_name: members[i].naam, subject, message: body });
+      members[i].reminderSentAt = new Date().toISOString();
+      sent++;
+    }catch(e){ failed++; }
+    await new Promise(r=>setTimeout(r, 400));
+  }
+  await saveMembers();
+  render();
+  toast(`${sent} mail(s) verstuurd${failed ? ', ' + failed + ' mislukt' : ''}.`);
 }
 
 /* ---------- QR modal ---------- */
@@ -927,6 +1000,16 @@ function renderCodaReview(){
 }
 
 /* ---------- Boekhouding ---------- */
+async function uploadAttachment(file, keyHint){
+  if(!window.__storage) throw new Error('Opslag niet klaar');
+  const { storage, storageRef, uploadBytes, getDownloadURL } = window.__storage;
+  const path = `bijlagen/${keyHint}-${Date.now()}-${slug(file.name)}`;
+  const r = storageRef(storage, path);
+  await uploadBytes(r, file);
+  const url = await getDownloadURL(r);
+  return { url, name: file.name, type: file.type };
+}
+
 function renderBoekhouding(){
   const el = document.getElementById('section-boekhouding');
   const sorted = [...ledger].sort((a,b)=> b.datum.localeCompare(a.datum));
@@ -957,14 +1040,15 @@ function renderBoekhouding(){
         <div class="field"><label>Categorie</label><select id="lg-categorie"></select></div>
         <div class="field"><label>Bedrag</label><input id="lg-bedrag" type="number" step="0.01" placeholder="0.00"></div>
       </div>
+      <div class="field"><label>Bijlage — foto of PDF (optioneel)</label><input id="lg-bijlage" type="file" accept="image/*,.pdf"></div>
       <button class="btn btn-primary btn-block" onclick="addLedgerEntry()">Boeking toevoegen</button>
     </div>
     <div class="card">
       <h3 class="card-title">Alle boekingen</h3>
       <p class="muted" style="margin-bottom:10px;">Echt saldo (telt mee in Overzicht): <b class="tnum" style="color:var(--ink);">${euro(realBalance)}</b>${testEntries.length>0 ? ` · <span style="color:#8A6D1D;">waarvan ${euro(testNet)} in ${testEntries.length} testboeking(en) hieronder niet meegerekend</span>` : ''}</p>
       ${sorted.length===0 ? `<p class="empty">Nog geen boekingen.</p>` :
-        `<div class="table-scroll"><table><thead><tr><th>Datum</th><th>Omschrijving</th><th>Categorie</th><th style="text-align:right;">Bedrag</th><th></th></tr></thead><tbody>
-        ${sorted.map(e=>`<tr><td class="tnum">${e.datum}</td><td>${escapeHtml(e.omschrijving)} ${e.isTest?'<span class="pill test">Test</span>':''}</td><td><span class="cat-tag">${escapeHtml(e.categorie)}</span></td><td style="text-align:right;" class="tnum ${e.type==='in'?'amt-in':'amt-out'}">${e.type==='in'?'+':'-'}${euro(e.bedrag)}</td><td><button class="del-x" onclick="removeLedgerEntry(${e.id})">✕</button></td></tr>`).join('')}
+        `<div class="table-scroll"><table><thead><tr><th>Datum</th><th>Omschrijving</th><th>Categorie</th><th style="text-align:right;">Bedrag</th><th>Bijlage</th><th></th></tr></thead><tbody>
+        ${sorted.map(e=>`<tr><td class="tnum">${e.datum}</td><td>${escapeHtml(e.omschrijving)} ${e.isTest?'<span class="pill test">Test</span>':''}</td><td><span class="cat-tag">${escapeHtml(e.categorie)}</span></td><td style="text-align:right;" class="tnum ${e.type==='in'?'amt-in':'amt-out'}">${e.type==='in'?'+':'-'}${euro(e.bedrag)}</td><td>${e.bijlage ? `<a href="${e.bijlage.url}" target="_blank" rel="noopener" title="${escapeHtml(e.bijlage.name)}">📎</a> <button class="del-x" onclick="removeAttachment(${e.id})" title="Bijlage verwijderen">✕</button>` : `<input type="file" id="attach-${e.id}" accept="image/*,.pdf" style="display:none" onchange="handleAttachUpload(${e.id}, event)"><button class="del-x" onclick="document.getElementById('attach-${e.id}').click()" title="Bijlage toevoegen">📎+</button>`}</td><td><button class="del-x" onclick="removeLedgerEntry(${e.id})">✕</button></td></tr>`).join('')}
         </tbody></table></div>`}
     </div>
   `;
@@ -983,12 +1067,44 @@ async function addLedgerEntry(){
   const omschrijving = document.getElementById('lg-omschrijving').value.trim();
   const categorie = document.getElementById('lg-categorie').value;
   const bedrag = parseFloat(document.getElementById('lg-bedrag').value);
+  const fileInput = document.getElementById('lg-bijlage');
+  const file = fileInput && fileInput.files[0];
   if(!omschrijving){ toast('Geef een omschrijving in.'); return; }
   if(!bedrag || bedrag<=0){ toast('Geef een geldig bedrag in.'); return; }
-  ledger.push({ id: Date.now(), datum, omschrijving, categorie, bedrag, type, isTest: !!settings.testMode });
+  if(file && file.size > 10*1024*1024){ toast('Bijlage is te groot (max 10MB).'); return; }
+  const entry = { id: Date.now(), datum, omschrijving, categorie, bedrag, type, isTest: !!settings.testMode, bijlage: null };
+  if(file){
+    toast('Bijlage wordt geüpload…');
+    try{ entry.bijlage = await uploadAttachment(file, entry.id); }
+    catch(e){ toast('Bijlage uploaden mislukt — boeking wordt zonder bijlage opgeslagen.'); }
+  }
+  ledger.push(entry);
   await saveLedger();
   render();
   toast(settings.testMode ? 'Testboeking toegevoegd.' : 'Boeking toegevoegd.');
+}
+async function handleAttachUpload(entryId, evt){
+  const file = evt.target.files[0];
+  if(!file) return;
+  if(file.size > 10*1024*1024){ toast('Bestand is te groot (max 10MB).'); return; }
+  const idx = ledger.findIndex(e=>e.id===entryId);
+  if(idx<0) return;
+  toast('Bijlage wordt geüpload…');
+  try{
+    ledger[idx].bijlage = await uploadAttachment(file, entryId);
+    await saveLedger();
+    render();
+    toast('Bijlage toegevoegd.');
+  }catch(e){
+    toast('Uploaden mislukt.');
+  }
+}
+async function removeAttachment(entryId){
+  const idx = ledger.findIndex(e=>e.id===entryId);
+  if(idx<0) return;
+  ledger[idx].bijlage = null;
+  await saveLedger();
+  render();
 }
 async function removeLedgerEntry(id){
   ledger = ledger.filter(e=>e.id!==id);
