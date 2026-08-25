@@ -418,7 +418,7 @@ function render(){
       <button data-tab="dashboard" class="${activeTab==='dashboard'?'active':''}">Overzicht</button>
       <button data-tab="leden" class="${activeTab==='leden'?'active':''}">Leden</button>
       <button data-tab="boekhouding" class="${activeTab==='boekhouding'?'active':''}">Boekhouding</button>
-      <button data-tab="mailing" class="${activeTab==='mailing'?'active':''}">Mailing</button>
+      <button data-tab="mailing" class="${activeTab==='mailing'?'active':''}">Herinneringen</button>
       <button data-tab="instellingen" class="${activeTab==='instellingen'?'active':''}">Instellingen</button>
     </div>
     <div id="section-dashboard" class="section ${activeTab==='dashboard'?'active':''}"></div>
@@ -487,12 +487,15 @@ function renderLeden(){
         <div class="field"><label>Naam lid</label><input id="nl-naam" type="text" placeholder="Voornaam Achternaam"></div>
         <div class="field"><label>Standaard lidgeld</label><input id="nl-bedrag" type="number" step="0.01" placeholder="30.00"></div>
       </div>
-      <div class="field"><label>E-mail ouder (optioneel)</label><input id="nl-email" type="email" placeholder="ouder@voorbeeld.be"></div>
+      <div class="row2">
+        <div class="field"><label>E-mail ouder (optioneel)</label><input id="nl-email" type="email" placeholder="ouder@voorbeeld.be"></div>
+        <div class="field"><label>Gsm ouder (optioneel)</label><input id="nl-gsm" type="tel" placeholder="0470 12 34 56"></div>
+      </div>
       <button class="btn btn-primary btn-block" onclick="addMember()">Lid toevoegen</button>
     </div>
     <div class="card">
       <h3 class="card-title">Leden importeren uit Excel</h3>
-      <p class="muted">Kolommen <b>Naam</b>, <b>Lidgeld</b> en optioneel <b>E-mail</b> — volgorde en hoofdletters maken niet uit. Een lid met een naam die al bestaat wordt bijgewerkt in plaats van dubbel toegevoegd.</p>
+      <p class="muted">Kolommen <b>Naam</b>, <b>Lidgeld</b>, optioneel <b>E-mail</b> en <b>Gsm</b> — volgorde en hoofdletters maken niet uit. Een lid met een naam die al bestaat wordt bijgewerkt in plaats van dubbel toegevoegd.</p>
       <input id="xl-file" type="file" accept=".xlsx,.xls,.csv" style="margin-top:8px;" onchange="handleExcelImport(event)">
       <div id="xl-status" class="muted" style="margin-top:8px;"></div>
     </div>
@@ -507,7 +510,7 @@ function renderLeden(){
     <div class="member-card ${m.paidThisYear?'paid':'due'}">
       <div>
         <div class="member-name">${escapeHtml(m.naam)}</div>
-        <div class="member-sub">Lidgeld ${euro(m.bedrag)} ${m.email? '· '+escapeHtml(m.email):''}</div>
+        <div class="member-sub">Lidgeld ${euro(m.bedrag)} ${m.email? '· '+escapeHtml(m.email):''} ${m.gsm? '· '+escapeHtml(m.gsm):''}</div>
       </div>
       <div class="member-actions">
         ${m.isTest ? '<span class="pill test">Test</span>' : ''}
@@ -523,9 +526,10 @@ async function addMember(){
   const naam = document.getElementById('nl-naam').value.trim();
   const bedrag = parseFloat(document.getElementById('nl-bedrag').value);
   const email = document.getElementById('nl-email').value.trim();
+  const gsm = document.getElementById('nl-gsm').value.trim();
   if(!naam){ toast('Geef een naam in.'); return; }
   if(!bedrag || bedrag<=0){ toast('Geef een geldig lidgeldbedrag in.'); return; }
-  members.push({ naam, bedrag, email, paidThisYear:false, isTest: !!settings.testMode });
+  members.push({ naam, bedrag, email, gsm, paidThisYear:false, isTest: !!settings.testMode });
   await saveMembers();
   render();
   toast(settings.testMode ? 'Testlid toegevoegd.' : 'Lid toegevoegd.');
@@ -567,19 +571,22 @@ async function handleExcelImport(evt){
       const naamKey = findKey(row, [/^naam$/i, /name/i]);
       const bedragKey = findKey(row, [/lidgeld/i, /bedrag/i, /prijs/i, /amount/i]);
       const emailKey = findKey(row, [/e-?mail/i]);
+      const gsmKey = findKey(row, [/gsm/i, /mobiel/i, /telefoon/i, /tel\.?$/i, /phone/i]);
       const naam = naamKey ? String(row[naamKey]).trim() : '';
       if(!naam){ skipped++; continue; }
       let bedrag = bedragKey ? parseFloat(String(row[bedragKey]).replace(',', '.')) : NaN;
       if(isNaN(bedrag) || bedrag < 0) bedrag = 0;
       const email = emailKey ? String(row[emailKey]).trim() : '';
+      const gsm = gsmKey ? String(row[gsmKey]).trim() : '';
 
       const existing = members.findIndex(m => m.naam.trim().toLowerCase() === naam.toLowerCase());
       if(existing >= 0){
         members[existing].bedrag = bedrag || members[existing].bedrag;
         if(email) members[existing].email = email;
+        if(gsm) members[existing].gsm = gsm;
         updated++;
       }else{
-        members.push({ naam, bedrag, email, paidThisYear:false, isTest: !!settings.testMode });
+        members.push({ naam, bedrag, email, gsm, paidThisYear:false, isTest: !!settings.testMode });
         added++;
       }
     }
@@ -601,42 +608,43 @@ function slug(s){ return (s||'lid').toLowerCase().normalize('NFD').replace(/[\u0
 
 function renderMailing(){
   const el = document.getElementById('section-mailing');
-  const withEmail = members.filter(m=>!m.isTest && m.email && m.email.trim());
-  const eligible = withEmail.filter(m=> !mailingOnlyOpen || !m.paidThisYear);
-  const noEmail = members.filter(m=>!m.isTest && (!m.email || !m.email.trim()));
+  const contactable = members.filter(m=>!m.isTest && ((m.email && m.email.trim()) || (m.gsm && m.gsm.trim())));
+  const eligible = contactable.filter(m=> !mailingOnlyOpen || !m.paidThisYear);
+  const noContact = members.filter(m=>!m.isTest && !(m.email && m.email.trim()) && !(m.gsm && m.gsm.trim()));
   const ibanOk = settings.iban && ibanValid(settings.iban);
 
   el.innerHTML = `
     <div class="card">
-      <h3 class="card-title">Betaalverzoeken mailen</h3>
-      <p class="muted">Voor elk lid staat het bedrag, rekeningnummer en gestructureerde mededeling al klaar in de mail. "Open e-mail" opent je eigen mailprogramma zodat je kan nalezen voor je verstuurt; "Verstuur" stuurt meteen automatisch via de gekoppelde mailservice.</p>
+      <h3 class="card-title">Betaalverzoeken versturen</h3>
+      <p class="muted">Voor elk lid staat het bedrag, rekeningnummer en gestructureerde mededeling al klaar. "Open e-mail" en "WhatsApp" openen je eigen app zodat je kan nalezen voor je verstuurt; "Verstuur" stuurt e-mails meteen automatisch via de gekoppelde mailservice. Een automatische bulkverzending bestaat niet voor WhatsApp — dat vereist een goedgekeurde WhatsApp Business-koppeling, wat voor een Chiro niet in verhouding staat.</p>
       ${!ibanOk ? `<p class="badge-warn" style="margin-top:8px;">⚠ Vul eerst een geldig IBAN in bij Instellingen.</p>` : ''}
-      ${!emailjsReady() ? `<p class="muted" style="margin-top:8px;">Automatisch versturen is nog niet ingesteld — zie README.md. "Open e-mail" werkt wel al zonder die instelling.</p>` : ''}
+      ${!emailjsReady() ? `<p class="muted" style="margin-top:8px;">Automatisch e-mails versturen is nog niet ingesteld — zie README.md. "Open e-mail" werkt wel al zonder die instelling.</p>` : ''}
       <label style="display:flex; align-items:center; gap:8px; margin-top:12px; font-weight:600; font-size:13px; color:var(--ink-soft);">
         <input type="checkbox" id="mailing-filter" ${mailingOnlyOpen?'checked':''} onchange="toggleMailingFilter()" style="width:auto;">
         Enkel leden met openstaand lidgeld tonen
       </label>
-      ${eligible.length>0 && emailjsReady() ? `<button class="btn btn-primary btn-block" style="margin-top:12px;" onclick="sendAllMails()" ${!ibanOk?'disabled':''}>Verstuur naar alle ${eligible.length} getoonde leden</button>` : ''}
+      ${eligible.length>0 && emailjsReady() ? `<button class="btn btn-primary btn-block" style="margin-top:12px;" onclick="sendAllMails()" ${!ibanOk?'disabled':''}>Verstuur e-mail naar alle ${eligible.length} getoonde leden</button>` : ''}
     </div>
-    ${eligible.length===0 ? `<p class="empty">Geen leden met e-mailadres ${mailingOnlyOpen?'die nog moeten betalen':''} gevonden.</p>` :
+    ${eligible.length===0 ? `<p class="empty">Geen leden met e-mail of gsm-nummer ${mailingOnlyOpen?'die nog moeten betalen':''} gevonden.</p>` :
       eligible.map(m=>{
         const i = members.indexOf(m);
         return `
         <div class="member-card ${m.paidThisYear?'paid':'due'}">
           <div>
             <div class="member-name">${escapeHtml(m.naam)}</div>
-            <div class="member-sub">${escapeHtml(m.email)} · ${euro(m.bedrag)} ${m.reminderSentAt ? '· verstuurd op '+new Date(m.reminderSentAt).toLocaleDateString('nl-BE') : ''}</div>
+            <div class="member-sub">${m.email?escapeHtml(m.email):''}${m.email&&m.gsm?' · ':''}${m.gsm?escapeHtml(m.gsm):''} · ${euro(m.bedrag)} ${m.reminderSentAt ? '· verstuurd op '+new Date(m.reminderSentAt).toLocaleDateString('nl-BE') : ''}</div>
           </div>
           <div class="member-actions">
             ${m.reminderSentAt ? '<span class="pill paid">Verzonden</span>' : ''}
             <button class="btn btn-ghost btn-sm" onclick="downloadMemberQr(${i})" ${!ibanOk?'disabled':''}>QR downloaden</button>
-            <button class="btn btn-ghost btn-sm" onclick="openMailDraft(${i})" ${!ibanOk?'disabled':''}>Open e-mail</button>
-            ${emailjsReady() ? `<button class="btn btn-primary btn-sm" onclick="sendMemberEmail(${i})" ${!ibanOk?'disabled':''}>Verstuur</button>` : ''}
+            ${m.email ? `<button class="btn btn-ghost btn-sm" onclick="openMailDraft(${i})" ${!ibanOk?'disabled':''}>Open e-mail</button>` : ''}
+            ${m.email && emailjsReady() ? `<button class="btn btn-primary btn-sm" onclick="sendMemberEmail(${i})" ${!ibanOk?'disabled':''}>Verstuur</button>` : ''}
+            ${m.gsm ? `<button class="btn btn-ghost btn-sm" onclick="openWhatsapp(${i})" ${!ibanOk?'disabled':''}>WhatsApp</button>` : ''}
           </div>
         </div>`;
       }).join('')
     }
-    ${noEmail.length>0 ? `<p class="muted" style="margin-top:6px;">Geen e-mailadres bekend voor: ${noEmail.map(m=>escapeHtml(m.naam)).join(', ')}.</p>` : ''}
+    ${noContact.length>0 ? `<p class="muted" style="margin-top:6px;">Geen e-mail of gsm-nummer bekend voor: ${noContact.map(m=>escapeHtml(m.naam)).join(', ')}.</p>` : ''}
   `;
 }
 function toggleMailingFilter(){ mailingOnlyOpen = document.getElementById('mailing-filter').checked; renderMailing(); }
@@ -696,12 +704,37 @@ async function openMailDraft(i){
   const { subject, body } = buildMemberMailContent(m, ogm);
   const mailUrl = `mailto:${m.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   window.location.href = mailUrl;
-  setTimeout(()=>{ if(confirm(`Mail geopend voor ${m.naam}. Markeren als verstuurd?`)) markMailSent(i); }, 800);
+  setTimeout(()=>{ if(confirm(`Mail geopend voor ${m.naam}. Markeren als verstuurd?`)) markReminderSent(i); }, 800);
 }
-async function markMailSent(i){
+async function markReminderSent(i){
   members[i].reminderSentAt = new Date().toISOString();
   await saveMembers();
   render();
+}
+
+/* ---------- WhatsApp (click-to-chat, geen bulkverzending mogelijk zonder WhatsApp Business API) ---------- */
+function formatWhatsappNumber(raw){
+  if(!raw) return null;
+  let digits = raw.replace(/[^\d+]/g,'').replace(/\s+/g,'');
+  if(digits.startsWith('+')) digits = digits.slice(1);
+  else if(digits.startsWith('00')) digits = digits.slice(2);
+  else if(digits.startsWith('0')) digits = '32' + digits.slice(1);
+  return digits.length >= 8 ? digits : null;
+}
+function buildWhatsappText(m, ogm){
+  const chiroNaam = settings.naam || 'de Chiro';
+  return `Hallo! Graag ontvangen we het lidgeld voor ${m.naam} bij ${chiroNaam}.\n\nBedrag: ${euro(m.bedrag)}\nRekeningnummer: ${settings.iban}\nMededeling: ${ogm.formatted}\n\nAlvast bedankt!`;
+}
+async function openWhatsapp(i){
+  const m = members[i];
+  if(!settings.iban || !ibanValid(settings.iban)){ toast('Vul eerst een geldig IBAN in bij Instellingen.'); return; }
+  if(!m.gsm){ toast('Dit lid heeft geen gsm-nummer.'); return; }
+  const num = formatWhatsappNumber(m.gsm);
+  if(!num){ toast('Kon geen geldig nummer maken van dit gsm-nummer.'); return; }
+  const ogm = await ensureMemberOgm(i);
+  const text = buildWhatsappText(m, ogm);
+  window.open(`https://wa.me/${num}?text=${encodeURIComponent(text)}`, '_blank');
+  setTimeout(()=>{ if(confirm(`WhatsApp geopend voor ${m.naam}. Markeren als verstuurd?`)) markReminderSent(i); }, 800);
 }
 
 function emailjsReady(){

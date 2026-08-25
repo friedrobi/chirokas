@@ -86,6 +86,20 @@ een gratis EmailJS-account nodig:
 Zonder deze stappen blijft "Open e-mail" gewoon werken — enkel de
 "Verstuur"-knoppen en de bulkverzending vereisen deze koppeling.
 
+## Ouders bereiken via WhatsApp
+
+Werkt zonder enige instelling — geen account, geen koppeling nodig.
+De "WhatsApp"-knop bij een lid (tabblad "Herinneringen") opent een
+kant-en-klaar bericht naar het gsm-nummer van dat lid via een
+`wa.me`-link; jij bekijkt en verstuurt het bericht zelf in WhatsApp
+(app of web).
+
+Let op: dit kan enkel één voor één, er bestaat geen "verstuur naar
+iedereen"-knop voor WhatsApp. Echte automatische WhatsApp-verzending
+vereist een goedgekeurde WhatsApp Business-koppeling bij Meta — een
+zware, formele aanvraagprocedure met (meestal) kosten per bericht, wat
+voor een Chiro niet in verhouding staat tegenover wat het oplevert.
+
 ## Hosten (gratis)
 
 Kies één van beide — beide zijn gratis en werken met deze bestanden zoals ze zijn:
