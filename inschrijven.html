@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inschrijven — Chirokas</title>
+<meta name="theme-color" content="#3F5B3D">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+<!-- ============================================================
+     FIREBASE-CONFIGURATIE — zelfde project als index.html.
+     ============================================================ -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+  import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+  import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBQDr0BuVS72KCBNMOyFSnjR3735TkpEMc",
+    authDomain: "chirokas-8c1d1.firebaseapp.com",
+    projectId: "chirokas-8c1d1",
+    storageBucket: "chirokas-8c1d1.firebasestorage.app",
+    messagingSenderId: "976970110843",
+    appId: "1:976970110843:web:08a722950449e2b1bb4fde"
+  };
+
+  const fbApp = initializeApp(firebaseConfig);
+  const db = getFirestore(fbApp);
+  const auth = getAuth(fbApp);
+
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      window.__firestore = { doc, getDoc, setDoc, db };
+      window.__firestoreReady = true;
+    }
+  });
+  signInAnonymously(auth).catch((err) => {
+    console.error('Firebase aanmelden mislukt:', err);
+    window.__firestoreError = true;
+  });
+</script>
+
+<style>
+  :root{
+    --paper:#FAF6EC; --card:#FFFDF7; --ink:#23301E; --ink-soft:#5B6455;
+    --forest:#3F5B3D; --forest-dark:#2C4029; --campfire:#C1622D; --campfire-dark:#A34F22;
+    --rope:#D8C7A1; --rope-line:#C9B589; --moss:#5C7A4B; --moss-bg:#E7EEE0;
+    --rust:#B4472A; --rust-bg:#F5E4DD;
+    --shadow: 0 1px 2px rgba(35,48,30,.06), 0 4px 14px rgba(35,48,30,.06);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    background-image: radial-gradient(circle at 1px 1px, rgba(35,48,30,0.05) 1px, transparent 0);
+    background-size: 22px 22px;
+    color:var(--ink); font-family:'Work Sans', system-ui, sans-serif; min-height:100vh;
+  }
+  h1,h2,h3{ font-family:'Fraunces', Georgia, serif; font-weight:600; letter-spacing:-0.01em; }
+  button{ font-family:inherit; cursor:pointer; }
+  input, select, textarea{ font-family:inherit; }
+  .wrap{ max-width:520px; margin:0 auto; padding:0 16px 64px; }
+  .header{
+    background:var(--forest); color:#F3EEDC; padding:26px 16px 20px; margin:0 -16px 20px;
+    border-radius:0 0 18px 18px; text-align:center;
+  }
+  .header p{ margin:0 0 4px; font-size:11px; letter-spacing:.14em; text-transform:uppercase; opacity:.75; }
+  .header h1{ margin:0; font-size:24px; color:#fff; }
+  .card{
+    background:var(--card); border:1px solid var(--rope-line); border-radius:14px;
+    padding:20px; box-shadow:var(--shadow); margin-bottom:16px;
+  }
+  .muted{ color:var(--ink-soft); font-size:13px; margin:0; }
+  label{ display:block; font-size:12.5px; font-weight:600; color:var(--ink-soft); margin:0 0 4px; }
+  .field{ margin-bottom:14px; }
+  input[type=text], input[type=number], input[type=email], input[type=date], input[type=tel], select, textarea{
+    width:100%; padding:10px 11px; border:1px solid var(--rope-line); border-radius:8px;
+    background:#fff; color:var(--ink); font-size:15px;
+  }
+  input:focus, select:focus, textarea:focus{ outline:2px solid var(--campfire); outline-offset:1px; }
+  .row2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  @media (max-width:480px){ .row2{ grid-template-columns:1fr; } }
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    border-radius:9px; padding:11px 16px; font-weight:600; font-size:14.5px;
+    border:1px solid transparent; width:100%; transition:transform .1s, filter .1s;
+  }
+  .btn:active{ transform:scale(.98); }
+  .btn:disabled{ opacity:.45; cursor:not-allowed; }
+  .btn-primary{ background:var(--campfire); color:#fff; }
+  .btn-primary:hover{ filter:brightness(1.06); }
+  .btn-ghost{ background:transparent; color:var(--forest-dark); border-color:var(--rope-line); margin-top:10px; }
+  .btn-ghost:hover{ background:var(--rope); }
+  .banner{ border-radius:10px; padding:12px 14px; font-size:13.5px; margin-bottom:14px; line-height:1.5; }
+  .banner.found{ background:var(--moss-bg); color:#3C5432; }
+  .banner.maybe{ background:#FDF3D8; color:#8A6D1D; }
+  .banner.closed{ background:var(--rust-bg); color:var(--rust); }
+  .banner button{ background:none; border:1px solid currentColor; color:inherit; border-radius:7px; padding:5px 10px; font-size:12.5px; font-weight:600; margin:8px 6px 0 0; }
+  .qr-card{ background:#fff; border:2px dashed var(--rope-line); border-radius:14px; padding:16px; text-align:center; margin:14px 0; }
+  .ogm-code{ font-family:'Work Sans',monospace; font-weight:700; letter-spacing:.03em; font-size:16px; margin-top:6px; }
+  .copy-box{ background:#fff; border:1px solid var(--rope-line); border-radius:10px; padding:10px 12px; font-size:12.5px; color:var(--ink-soft); white-space:pre-wrap; margin-top:10px; }
+  .loading, .center{ text-align:center; padding:40px 10px; color:var(--ink-soft); }
+  .toast{
+    position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
+    background:var(--forest); color:#fff; padding:10px 18px; border-radius:100px;
+    font-size:13px; font-weight:600; box-shadow:var(--shadow); z-index:80;
+    opacity:0; pointer-events:none; transition:opacity .2s, transform .2s;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(-4px); }
+  .divider-or{ text-align:center; color:var(--ink-soft); font-size:12px; margin:14px 0; text-transform:uppercase; letter-spacing:.08em; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <div class="loading" id="loading">Bezig met laden…</div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+let settings = { naam:'', iban:'', bic:'', rekeninghouder:'', nextRef:1, standaardLidgeld:30, inschrijvingOpen:true, mollieEnabled:false, mollieWorkerUrl:'' };
+let members = [];
+const AFDELINGEN = ['Pagatters','Speelclub jongens','Speelclub meisjes','Rakkers','Kwiks','Tippers','Toppers','Kerels','Tiptiens','Aspi jongens','Aspi meisjes','Leiding'];
+
+function waitForFirestore(){
+  return new Promise((resolve, reject)=>{
+    if(window.__firestoreReady) return resolve();
+    const iv = setInterval(()=>{
+      if(window.__firestoreReady){ clearInterval(iv); resolve(); }
+      if(window.__firestoreError){ clearInterval(iv); reject(new Error('Firebase-aanmelding mislukt')); }
+    }, 40);
+    setTimeout(()=>{ clearInterval(iv); reject(new Error('Kon geen verbinding maken.')); }, 12000);
+  });
+}
+async function loadAll(){
+  const { doc, getDoc, db } = window.__firestore;
+  try{ const s = await getDoc(doc(db,'chirokas','settings')); if(s.exists()) settings = { ...settings, ...s.data() }; }catch(e){}
+  try{ const m = await getDoc(doc(db,'chirokas','members')); if(m.exists()) members = m.data().list || []; }catch(e){}
+  let changed = false;
+  members.forEach((m,idx)=>{ if(!m.id){ m.id = Date.now()+idx; changed = true; } });
+  if(changed) await saveMembers();
+}
+async function saveMembers(){
+  const { doc, setDoc, db } = window.__firestore;
+  await setDoc(doc(db,'chirokas','members'), { list: members });
+}
+async function saveSettings(){
+  const { doc, setDoc, db } = window.__firestore;
+  await setDoc(doc(db,'chirokas','settings'), settings);
+}
+
+/* ---------- OGM / IBAN / QR — zelfde logica als index.html ---------- */
+function generateOGM(){
+  const seq = settings.nextRef || 1;
+  const base = String(seq).padStart(10,'0');
+  let rem = parseInt(base,10) % 97;
+  if(rem===0) rem = 97;
+  const checksum = String(rem).padStart(2,'0');
+  const full = base + checksum;
+  const formatted = `+++${full.slice(0,3)}/${full.slice(3,7)}/${full.slice(7,12)}+++`;
+  return { raw: full, formatted };
+}
+function ibanValid(iban){
+  const clean = (iban||'').replace(/\s+/g,'').toUpperCase();
+  if(clean.length < 15 || !/^[A-Z]{2}[0-9A-Z]+$/.test(clean)) return false;
+  const rearr = clean.slice(4) + clean.slice(0,4);
+  let numStr = '';
+  for(const ch of rearr){ numStr += /[0-9]/.test(ch) ? ch : (ch.charCodeAt(0)-55).toString(); }
+  let rem = 0;
+  for(const d of numStr){ rem = (rem*10 + parseInt(d,10)) % 97; }
+  return rem === 1;
+}
+function buildEpcPayload(amount, ogmRaw){
+  const iban = (settings.iban||'').replace(/\s+/g,'').toUpperCase();
+  const name = (settings.rekeninghouder || settings.naam || '').slice(0,70);
+  const amt = 'EUR' + Number(amount).toFixed(2);
+  return ['BCD','002','1','SCT', settings.bic ? settings.bic.replace(/\s+/g,'').toUpperCase() : '', name, iban, amt, '', ogmRaw, ''].join('\n');
+}
+function euro(n){ return '€ ' + Number(n||0).toLocaleString('nl-BE',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s??''; return d.innerHTML; }
+let toastTimer;
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove('show'), 2600);
+}
+
+/* ---------- Naam-matching (normalisatie + Levenshtein) ---------- */
+function normalizeName(s){
+  return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z\s]/g,'').replace(/\s+/g,' ').trim();
+}
+function levenshtein(a,b){
+  const m=a.length, n=b.length;
+  const d = Array.from({length:m+1}, (_,i)=>[i, ...Array(n).fill(0)]);
+  for(let j=0;j<=n;j++) d[0][j]=j;
+  for(let i=1;i<=m;i++){
+    for(let j=1;j<=n;j++){
+      d[i][j] = a[i-1]===b[j-1] ? d[i-1][j-1] : 1 + Math.min(d[i-1][j], d[i][j-1], d[i-1][j-1]);
+    }
+  }
+  return d[m][n];
+}
+function findMatches(voornaam, achternaam, geboortedatum){
+  const naam = `${voornaam} ${achternaam}`.trim();
+  const norm = normalizeName(naam);
+  if(!norm) return { exact:null, fuzzy:[] };
+  let exact = null;
+  const fuzzy = [];
+  for(const m of members){
+    const mNorm = normalizeName(m.naam);
+    const sameDate = geboortedatum && m.geboortedatum && geboortedatum===m.geboortedatum;
+    if(mNorm===norm && sameDate){ exact = m; continue; }
+    if(mNorm===norm && geboortedatum && !m.geboortedatum){ exact = m; continue; }
+    const dist = levenshtein(mNorm, norm);
+    const closeName = dist <= 2 && mNorm.length>0;
+    if((closeName && sameDate) || (mNorm===norm && !sameDate)){
+      fuzzy.push(m);
+    }
+  }
+  return { exact, fuzzy };
+}
+
+/* ---------- State ---------- */
+let matchResult = { exact:null, fuzzy:[] };
+let confirmedMatch = null; // member object once user confirms "ja, dat ben ik" or exact match found
+let dupIgnored = false;    // user said "nee, nieuw lid" on a fuzzy suggestion
+
+function render(){
+  const app = document.getElementById('app');
+  const urlParams = new URLSearchParams(location.search);
+  const isMollieReturn = urlParams.get('molliereturn')==='1' && urlParams.get('memberId');
+  if(isMollieReturn){
+    renderMollieReturn(parseInt(urlParams.get('memberId'),10));
+    return;
+  }
+  if(settings.inschrijvingOpen===false){
+    app.innerHTML = `
+      <div class="header"><p>Chirokas</p><h1>${settings.naam?escapeHtml(settings.naam):'Inschrijven'}</h1></div>
+      <div class="card"><div class="banner closed">Inschrijvingen zijn momenteel gesloten. Neem contact op met de leiding als je toch wil inschrijven.</div></div>
+    `;
+    return;
+  }
+  app.innerHTML = `
+    <div class="header"><p>Chirokas</p><h1>${settings.naam?escapeHtml(settings.naam):'Inschrijven'}</h1></div>
+    <div class="card">
+      <h3 style="margin-top:0;">Gegevens lid</h3>
+      <div class="row2">
+        <div class="field"><label>Voornaam</label><input id="rf-voornaam" type="text"></div>
+        <div class="field"><label>Achternaam</label><input id="rf-achternaam" type="text"></div>
+      </div>
+      <div class="field"><label>Geboortedatum</label><input id="rf-geboortedatum" type="date"></div>
+      <div id="match-banner"></div>
+      <div class="field"><label>Afdeling</label><select id="rf-afdeling">${AFDELINGEN.map(a=>`<option value="${a}">${a}</option>`).join('')}</select></div>
+      <div class="row2">
+        <div class="field"><label>E-mail ouder</label><input id="rf-email" type="email"></div>
+        <div class="field"><label>Gsm ouder</label><input id="rf-gsm" type="tel"></div>
+      </div>
+      <div class="field"><label>Lidgeld</label><input id="rf-bedrag" type="number" step="0.01" value="${settings.standaardLidgeld||30}"></div>
+      <div class="field"><label>Notities (allergieën, bijzonderheden — optioneel)</label><textarea id="rf-notities" rows="3"></textarea></div>
+      <button class="btn btn-primary" onclick="submitInschrijving()">Inschrijven</button>
+    </div>
+    <p class="muted" style="text-align:center;">Gegevens worden bewaard bij ${settings.naam||'de Chiro'} voor ledenadministratie en boekhouding.</p>
+  `;
+  ['rf-voornaam','rf-achternaam','rf-geboortedatum'].forEach(id=>{
+    document.getElementById(id).addEventListener('blur', checkForMatch);
+  });
+}
+
+function checkForMatch(){
+  const voornaam = document.getElementById('rf-voornaam').value.trim();
+  const achternaam = document.getElementById('rf-achternaam').value.trim();
+  const geboortedatum = document.getElementById('rf-geboortedatum').value;
+  if(!voornaam || !achternaam){ return; }
+  matchResult = findMatches(voornaam, achternaam, geboortedatum);
+  confirmedMatch = matchResult.exact || null;
+  dupIgnored = false;
+  renderMatchBanner();
+  if(confirmedMatch) prefillFromMember(confirmedMatch);
+}
+
+function renderMatchBanner(){
+  const el = document.getElementById('match-banner');
+  if(!el) return;
+  if(matchResult.exact){
+    el.innerHTML = `<div class="banner found">We vonden een bestaand lid met deze naam en geboortedatum — de gegevens hieronder zijn al ingevuld. Klopt er iets niet meer? Pas het gerust aan.</div>`;
+  } else if(matchResult.fuzzy.length>0 && !dupIgnored){
+    el.innerHTML = `<div class="banner maybe">Gelijkaardig(e) lid/leden gevonden: <b>${matchResult.fuzzy.map(m=>escapeHtml(m.naam)).join(', ')}</b>. Is dit hetzelfde lid?
+      <br>
+      <button onclick="confirmFuzzyMatch(${matchResult.fuzzy[0].id})">Ja, dat ben ik</button>
+      <button onclick="declineFuzzyMatch()">Nee, nieuw lid</button>
+    </div>`;
+  } else {
+    el.innerHTML = '';
+  }
+}
+function confirmFuzzyMatch(id){
+  const m = members.find(x=>x.id===id);
+  if(!m) return;
+  confirmedMatch = m;
+  dupIgnored = false;
+  renderMatchBanner();
+  prefillFromMember(m);
+  toast('Gegevens overgenomen.');
+}
+function declineFuzzyMatch(){
+  confirmedMatch = null;
+  dupIgnored = true;
+  renderMatchBanner();
+}
+function prefillFromMember(m){
+  document.getElementById('rf-voornaam').value = m.naam.split(' ')[0]||'';
+  document.getElementById('rf-achternaam').value = m.naam.split(' ').slice(1).join(' ')||'';
+  if(m.geboortedatum) document.getElementById('rf-geboortedatum').value = m.geboortedatum;
+  if(m.afdeling) document.getElementById('rf-afdeling').value = m.afdeling;
+  if(m.email) document.getElementById('rf-email').value = m.email;
+  if(m.gsm) document.getElementById('rf-gsm').value = m.gsm;
+  if(m.bedrag) document.getElementById('rf-bedrag').value = m.bedrag;
+  if(m.notities) document.getElementById('rf-notities').value = m.notities;
+}
+
+async function ensureMemberOgm(m){
+  if(m.openOgm && m.openOgm.raw) return m.openOgm;
+  const ogm = generateOGM();
+  m.openOgm = { raw: ogm.raw, formatted: ogm.formatted };
+  settings.nextRef = (settings.nextRef||1) + 1;
+  return m.openOgm;
+}
+
+async function submitInschrijving(){
+  const voornaam = document.getElementById('rf-voornaam').value.trim();
+  const achternaam = document.getElementById('rf-achternaam').value.trim();
+  const geboortedatum = document.getElementById('rf-geboortedatum').value;
+  const afdeling = document.getElementById('rf-afdeling').value;
+  const email = document.getElementById('rf-email').value.trim();
+  const gsm = document.getElementById('rf-gsm').value.trim();
+  const bedrag = parseFloat(document.getElementById('rf-bedrag').value);
+  const notities = document.getElementById('rf-notities').value.trim();
+  if(!voornaam || !achternaam){ toast('Vul voor- en achternaam in.'); return; }
+  if(!bedrag || bedrag<=0){ toast('Geef een geldig lidgeldbedrag in.'); return; }
+  const naam = `${voornaam} ${achternaam}`.trim();
+
+  let member;
+  if(confirmedMatch){
+    member = members.find(m=>m.id===confirmedMatch.id);
+    member.naam = naam;
+    member.geboortedatum = geboortedatum || member.geboortedatum || '';
+    member.afdeling = afdeling;
+    member.email = email;
+    member.gsm = gsm;
+    member.bedrag = bedrag;
+    if(notities) member.notities = notities;
+  } else {
+    member = { id: Date.now(), naam, geboortedatum, afdeling, email, gsm, bedrag, notities, paidThisYear:false, isTest:false };
+    if(dupIgnored && matchResult.fuzzy.length>0){
+      member.possibleDuplicateOf = matchResult.fuzzy[0].id;
+      member.dupResolved = false;
+    }
+    members.push(member);
+  }
+  await ensureMemberOgm(member);
+  await saveMembers();
+  await saveSettings();
+  renderPaymentOptions(member);
+}
+
+function renderPaymentOptions(member){
+  const app = document.getElementById('app');
+  const ibanOk = settings.iban && ibanValid(settings.iban);
+  const bedrag = member.bedrag;
+  app.innerHTML = `
+    <div class="header"><p>Chirokas</p><h1>Bedankt, ${escapeHtml(member.naam.split(' ')[0])}!</h1></div>
+    <div class="card">
+      <p class="muted">Inschrijving ontvangen. Nog te betalen: <b>${euro(bedrag)}</b>.</p>
+      ${!ibanOk ? '<p class="muted">De Chiro heeft nog geen rekeningnummer ingesteld — de leiding neemt contact op over de betaling.</p>' : ''}
+      ${ibanOk && settings.mollieEnabled && settings.mollieWorkerUrl ? `
+        <button class="btn btn-primary" onclick="startMolliePayment(${member.id})">Betaal nu online (Bancontact/kaart)</button>
+        <div class="divider-or">of</div>
+      ` : ''}
+      ${ibanOk ? `<button class="btn btn-ghost" onclick="showFreeQr(${member.id})">Betaal gratis via overschrijving (QR)</button>` : ''}
+    </div>
+    <div id="payment-detail"></div>
+  `;
+}
+
+function showFreeQr(memberId){
+  const m = members.find(x=>x.id===memberId);
+  const host = document.getElementById('payment-detail');
+  const ogm = m.openOgm;
+  const payload = buildEpcPayload(m.bedrag, ogm.raw);
+  host.innerHTML = `
+    <div class="card">
+      <div class="qr-card">
+        <div id="qr-canvas"></div>
+        <div class="ogm-code">${ogm.formatted}</div>
+        <p class="muted" style="margin-top:6px;">Scan met je bankapp voor een automatisch ingevulde, gratis overschrijving.</p>
+      </div>
+      <div class="copy-box">Chiro-lidgeld — te betalen: ${euro(m.bedrag)}
+Rekeningnummer: ${settings.iban}
+Mededeling: ${ogm.formatted}</div>
+    </div>
+  `;
+  const qrHost = document.getElementById('qr-canvas');
+  try{ new QRCode(qrHost, { text: payload, width:200, height:200, correctLevel: QRCode.CorrectLevel.M }); }
+  catch(e){ qrHost.innerHTML = '<p class="muted">QR-code kon niet geladen worden — gebruik de gegevens hierboven.</p>'; }
+}
+
+async function startMolliePayment(memberId){
+  const m = members.find(x=>x.id===memberId);
+  const host = document.getElementById('payment-detail');
+  host.innerHTML = `<p class="center">Bezig met doorverbinden naar Mollie…</p>`;
+  try{
+    const redirectUrl = `${location.origin}${location.pathname}?molliereturn=1&memberId=${m.id}`;
+    const res = await fetch(`${settings.mollieWorkerUrl.replace(/\/$/,'')}/create-payment`, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        amount: m.bedrag.toFixed(2),
+        description: `Lidgeld ${settings.naam||'Chiro'} — ${m.naam}`,
+        redirectUrl,
+        metadata: { memberId: m.id }
+      })
+    });
+    if(!res.ok) throw new Error('mollie create-payment mislukt');
+    const data = await res.json();
+    m.mollieId = data.id;
+    m.molliePaymentStatus = 'pending';
+    await saveMembers();
+    window.location.href = data.checkoutUrl;
+  }catch(e){
+    host.innerHTML = `<div class="card"><p class="muted">Online betalen lukte niet. Gebruik de gratis QR-code hieronder.</p></div>`;
+    showFreeQr(memberId);
+  }
+}
+
+async function renderMollieReturn(memberId){
+  const app = document.getElementById('app');
+  app.innerHTML = `<div class="loading">Betaling controleren…</div>`;
+  const m = members.find(x=>x.id===memberId);
+  if(!m || !m.mollieId){
+    app.innerHTML = `<div class="card"><p class="muted">Geen betaling gevonden om te controleren.</p></div>`;
+    return;
+  }
+  try{
+    const res = await fetch(`${settings.mollieWorkerUrl.replace(/\/$/,'')}/payment-status?id=${encodeURIComponent(m.mollieId)}`);
+    const data = await res.json();
+    if(data.status==='paid' && m){
+      m.paidThisYear = true;
+      m.molliePaymentStatus = 'paid';
+      await saveMembers();
+      app.innerHTML = `
+        <div class="header"><p>Chirokas</p><h1>Betaald — bedankt!</h1></div>
+        <div class="card"><p class="muted">De betaling voor ${escapeHtml(m.naam)} is ontvangen en geregistreerd.</p></div>
+      `;
+    } else {
+      app.innerHTML = `
+        <div class="header"><p>Chirokas</p><h1>Nog niet bevestigd</h1></div>
+        <div class="card"><p class="muted">We hebben nog geen bevestiging van je betaling. Als je toch betaald hebt, komt dit automatisch goed zodra de leiding de betaling controleert — geen zorgen.</p></div>
+      `;
+    }
+  }catch(e){
+    app.innerHTML = `<div class="card"><p class="muted">Kon de betaalstatus niet controleren. Neem contact op met de leiding als je twijfelt.</p></div>`;
+  }
+}
+
+/* ---------- Init ---------- */
+(async function init(){
+  try{
+    await waitForFirestore();
+    await loadAll();
+    render();
+  }catch(e){
+    document.getElementById('app').innerHTML = `<div class="loading">Kon geen verbinding maken.<br><small>${escapeHtml(e.message||'')}</small></div>`;
+  }
+})();
+</script>
+</body>
+</html>

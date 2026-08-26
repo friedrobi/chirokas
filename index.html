@@ -309,7 +309,7 @@
 
 <script>
 /* ---------- Storage helpers (Firestore) ---------- */
-let settings = { naam:'', iban:'', bic:'', rekeninghouder:'', nextRef: 1 };
+let settings = { naam:'', iban:'', bic:'', rekeninghouder:'', nextRef: 1, standaardLidgeld: 30, inschrijvingOpen: true, mollieEnabled: false, mollieWorkerUrl: '' };
 let members = [];
 let ledger = [];
 
@@ -338,6 +338,9 @@ async function loadAll(){
     const l = await getDoc(doc(db,'chirokas','ledger'));
     if(l.exists()) ledger = l.data().list || [];
   }catch(e){}
+  let idsAssigned = false;
+  members.forEach((m,idx)=>{ if(!m.id){ m.id = Date.now() + idx; idsAssigned = true; } });
+  if(idsAssigned) await saveMembers();
 }
 async function saveSettings(){
   try{ const { doc, setDoc, db } = window.__firestore; await setDoc(doc(db,'chirokas','settings'), settings); }
@@ -529,9 +532,64 @@ function afdelingOptions(selected){
 let ledenAfdelingFilter = '';
 function toggleLedenAfdelingFilter(){ ledenAfdelingFilter = document.getElementById('leden-afdeling-filter').value; renderLeden(); }
 
+function renderDupReview(){
+  const dups = members.filter(m => m.possibleDuplicateOf && !m.dupResolved);
+  if(dups.length===0) return '';
+  const rows = dups.map(d=>{
+    const canonical = members.find(c=>c.id===d.possibleDuplicateOf);
+    if(!canonical){ return ''; }
+    return `
+      <div class="card" style="border-color:#E9D48B; background:#FFFBF0;">
+        <p class="muted" style="margin-bottom:8px;"><b>Nieuwe inschrijving</b> lijkt op een bestaand lid — via de inschrijvingspagina zelf niet automatisch samengevoegd omdat er onvoldoende zekerheid was.</p>
+        <div class="row2">
+          <div>
+            <div class="member-name">${escapeHtml(d.naam)} <span class="pill due">Nieuw</span></div>
+            <div class="member-sub">${d.geboortedatum||'geen geboortedatum'} ${d.afdeling? '· '+escapeHtml(d.afdeling):''} ${d.email? '· '+escapeHtml(d.email):''} ${d.gsm? '· '+escapeHtml(d.gsm):''}</div>
+          </div>
+          <div>
+            <div class="member-name">${escapeHtml(canonical.naam)} <span class="pill paid">Bestaand</span></div>
+            <div class="member-sub">${canonical.geboortedatum||'geen geboortedatum'} ${canonical.afdeling? '· '+escapeHtml(canonical.afdeling):''} ${canonical.email? '· '+escapeHtml(canonical.email):''} ${canonical.gsm? '· '+escapeHtml(canonical.gsm):''}</div>
+          </div>
+        </div>
+        <div class="row2" style="margin-top:10px;">
+          <button class="btn btn-primary" onclick="mergeDuplicate(${d.id})">Zelfde lid — samenvoegen</button>
+          <button class="btn btn-ghost" onclick="keepSeparateDuplicate(${d.id})">Toch apart lid</button>
+        </div>
+      </div>`;
+  }).join('');
+  return `<div class="card"><h3 class="card-title">Mogelijke dubbels (${dups.length})</h3><p class="muted">Kwam binnen via de inschrijvingspagina, met een naam en/of geboortedatum die op een bestaand lid lijkt.</p></div>${rows}`;
+}
+async function mergeDuplicate(dupId){
+  const dupIdx = members.findIndex(m=>m.id===dupId);
+  if(dupIdx<0) return;
+  const dup = members[dupIdx];
+  const canonicalIdx = members.findIndex(c=>c.id===dup.possibleDuplicateOf);
+  if(canonicalIdx<0){ toast('Bestaand lid niet meer gevonden.'); return; }
+  const canonical = members[canonicalIdx];
+  if(dup.afdeling) canonical.afdeling = dup.afdeling;
+  if(dup.geboortedatum) canonical.geboortedatum = dup.geboortedatum;
+  if(dup.email) canonical.email = dup.email;
+  if(dup.gsm) canonical.gsm = dup.gsm;
+  if(dup.notities) canonical.notities = ((canonical.notities||'') + (canonical.notities?'\n':'') + dup.notities).trim();
+  if(dup.bedrag) canonical.bedrag = dup.bedrag;
+  members.splice(dupIdx,1);
+  await saveMembers();
+  render();
+  toast('Samengevoegd met bestaand lid.');
+}
+async function keepSeparateDuplicate(dupId){
+  const dup = members.find(m=>m.id===dupId);
+  if(!dup) return;
+  dup.dupResolved = true;
+  await saveMembers();
+  render();
+  toast('Als apart lid bevestigd.');
+}
+
 function renderLeden(){
   const el = document.getElementById('section-leden');
   el.innerHTML = `
+    ${renderDupReview()}
     <div class="card">
       <h3 class="card-title">Nieuw lid</h3>
       <div class="row2">
@@ -606,7 +664,7 @@ async function addMember(){
   const afdeling = document.getElementById('nl-afdeling').value;
   if(!naam){ toast('Geef een naam in.'); return; }
   if(!bedrag || bedrag<=0){ toast('Geef een geldig lidgeldbedrag in.'); return; }
-  members.push({ naam, bedrag, email, gsm, afdeling, paidThisYear:false, isTest: !!settings.testMode });
+  members.push({ id: Date.now(), naam, bedrag, email, gsm, afdeling, paidThisYear:false, isTest: !!settings.testMode });
   await saveMembers();
   render();
   toast(settings.testMode ? 'Testlid toegevoegd.' : 'Lid toegevoegd.');
@@ -659,6 +717,10 @@ function renderMemberDetail(){
       <div class="field"><label>Afdeling</label><select id="md-afdeling">${afdelingOptions(m.afdeling||'')}</select></div>
     </div>
     <div class="row2">
+      <div class="field"><label>Geboortedatum</label><input id="md-geboortedatum" type="date" value="${m.geboortedatum||''}"></div>
+      <div class="field"></div>
+    </div>
+    <div class="row2">
       <div class="field"><label>E-mail</label><input id="md-email" type="email" value="${escapeHtml(m.email||'')}"></div>
       <div class="field"><label>Gsm</label><input id="md-gsm" type="tel" value="${escapeHtml(m.gsm||'')}"></div>
     </div>
@@ -678,6 +740,7 @@ async function saveMemberDetail(){
   members[i].naam = naam;
   members[i].bedrag = bedrag;
   members[i].afdeling = document.getElementById('md-afdeling').value;
+  members[i].geboortedatum = document.getElementById('md-geboortedatum').value || '';
   members[i].email = document.getElementById('md-email').value.trim();
   members[i].gsm = document.getElementById('md-gsm').value.trim();
   members[i].notities = document.getElementById('md-notities').value.trim();
@@ -740,7 +803,7 @@ async function handleExcelImport(evt){
         if(notities) members[existing].notities = notities;
         updated++;
       }else{
-        members.push({ naam, bedrag, email, gsm, afdeling, notities, paidThisYear:false, isTest: !!settings.testMode });
+        members.push({ id: Date.now()+added, naam, bedrag, email, gsm, afdeling, notities, paidThisYear:false, isTest: !!settings.testMode });
         added++;
       }
     }
@@ -1224,6 +1287,46 @@ function renderCodaReview(){
   `;
 }
 
+/* ---------- Mollie-betalingen controleren (server-side call via de gekoppelde Cloudflare Worker) ---------- */
+function molliePendingMembers(){
+  return members.filter(m => m.mollieId && m.molliePaymentStatus !== 'paid');
+}
+async function checkMolliePayments(){
+  if(!settings.mollieWorkerUrl){ toast('Vul eerst een Worker-URL in bij Instellingen.'); return; }
+  const pending = molliePendingMembers();
+  if(pending.length===0){ toast('Geen openstaande Mollie-betalingen.'); return; }
+  let paidCount = 0, errorCount = 0;
+  for(const m of pending){
+    try{
+      const res = await fetch(`${settings.mollieWorkerUrl.replace(/\/$/,'')}/payment-status?id=${encodeURIComponent(m.mollieId)}`);
+      if(!res.ok) throw new Error('bad status');
+      const data = await res.json();
+      const key = `mollie:${m.mollieId}`;
+      if(data.status === 'paid' && !ledger.some(e=>e.codaKey===key)){
+        m.paidThisYear = true;
+        m.molliePaymentStatus = 'paid';
+        ledger.push({ id: Date.now()+paidCount, datum: (data.paidAt||todayStr()).slice(0,10), omschrijving: `Lidgeld ${m.naam} (Mollie)`, categorie:'Lidgeld', bedrag: m.bedrag, type:'in', afdeling: m.afdeling||'', isTest: !!m.isTest, ogmRaw: null, codaKey: key });
+        paidCount++;
+      } else if(data.status && data.status !== m.molliePaymentStatus){
+        m.molliePaymentStatus = data.status;
+      }
+    }catch(e){ errorCount++; }
+  }
+  if(paidCount>0){ await saveMembers(); await saveLedger(); render(); }
+  toast(`${paidCount} Mollie-betaling(en) bevestigd en geboekt.${errorCount?` ${errorCount} kon(den) niet gecontroleerd worden.`:''}`);
+}
+function renderMollieCheck(){
+  if(!settings.mollieEnabled || !settings.mollieWorkerUrl) return '';
+  const pending = molliePendingMembers();
+  return `
+    <div class="card">
+      <h3 class="card-title">Mollie-betalingen controleren</h3>
+      <p class="muted">Voor leden die via de inschrijvingspagina met Mollie betaalden maar niet zijn teruggekeerd naar de bevestigingspagina. ${pending.length>0 ? `${pending.length} nog te controleren.` : 'Alles is up-to-date.'}</p>
+      <button class="btn btn-primary btn-block" style="margin-top:8px;" onclick="checkMolliePayments()" ${pending.length===0?'disabled':''}>Controleer nu</button>
+    </div>
+  `;
+}
+
 /* ---------- Boekhouding ---------- */
 async function uploadAttachment(file, keyHint){
   if(!window.__storage) throw new Error('Opslag niet klaar');
@@ -1249,6 +1352,7 @@ function renderBoekhouding(){
       <div id="coda-status" class="muted" style="margin-top:8px;"></div>
     </div>
     ${renderCodaReview()}
+    ${renderMollieCheck()}
     <div class="card">
       <h3 class="card-title">Nieuwe boeking</h3>
       <div class="row2">
@@ -1442,7 +1546,38 @@ function renderInstellingen(){
     </div>
     <div class="card">
       <h3 class="card-title">Over betalingen ontvangen</h3>
-      <p class="muted">Chirokas maakt gewone Europese overschrijvingen aan met een unieke gestructureerde mededeling per betaling — via QR-code, scanbaar met zowat elke Belgische bankapp. Dat kost niets extra: het is een gewone overschrijving, geen betaalplatform met transactiekosten. Betalingen worden pas op "betaald" gezet wanneer de leiding dit manueel bevestigt (bv. na controle op de rekening).</p>
+      <p class="muted">Chirokas maakt gewone Europese overschrijvingen aan met een unieke gestructureerde mededeling per betaling — via QR-code, scanbaar met zowat elke Belgische bankapp. Dat kost niets extra: het is een gewone overschrijving, geen betaalplatform met transactiekosten. Daarnaast kan je optioneel Mollie inschakelen voor ouders die liever meteen online betalen (kleine kost per betaling — zie hieronder). Betalingen worden op "betaald" gezet zodra de leiding een QR-betaling manueel bevestigt, een rekeninguittreksel afpunt, of een Mollie-betaling automatisch bevestigd wordt.</p>
+    </div>
+    <div class="card">
+      <h3 class="card-title">Inschrijvingspagina</h3>
+      <div class="field"><label>Standaard lidgeld voor nieuwe inschrijvingen</label><input id="st-standaardlidgeld" type="number" step="0.01" value="${settings.standaardLidgeld||30}"></div>
+      <div class="toggle-row">
+        <div>
+          <div style="font-weight:600; font-size:13.5px;">Inschrijvingen open</div>
+          <p class="muted">Als dit uitstaat, toont de inschrijvingspagina een melding dat inschrijven momenteel niet mogelijk is.</p>
+        </div>
+        <label class="switch"><input type="checkbox" id="st-inschrijvingopen" ${settings.inschrijvingOpen!==false?'checked':''}><span class="track"></span></label>
+      </div>
+      <button class="btn btn-primary btn-block" style="margin-top:12px;" onclick="saveInstellingen()">Opslaan</button>
+      <div class="qr-card" style="margin-top:14px;">
+        <p class="muted" style="margin-bottom:6px;">Deel deze link met ouders om nieuwe leden te laten inschrijven — bv. op een poster of in een nieuwsbrief:</p>
+        <div id="inschrijf-qr"></div>
+        <div class="copy-box" id="inschrijf-link-box">${inschrijfLinkUrl()}</div>
+        <button class="btn btn-ghost" style="margin-top:8px;" onclick="copyInschrijfLink()">Kopieer link</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3 class="card-title">Online betalen via Mollie (optioneel)</h3>
+      <p class="muted">Naast de gratis QR-code kan je ouders ook laten kiezen voor rechtstreeks online betalen via Mollie. Dat kost een kleine vaste vergoeding per betaling (voor Bancontact typisch €0,39 excl. btw). Dit vraagt een gratis Cloudflare Worker als tussenstap — zie MOLLIE-SETUP.md voor de volledige uitleg.</p>
+      <div class="toggle-row">
+        <div>
+          <div style="font-weight:600; font-size:13.5px;">Mollie inschakelen</div>
+          <p class="muted">Toont de "Betaal nu online"-knop op de inschrijvingspagina.</p>
+        </div>
+        <label class="switch"><input type="checkbox" id="st-mollieenabled" ${settings.mollieEnabled?'checked':''}><span class="track"></span></label>
+      </div>
+      <div class="field" style="margin-top:10px;"><label>Cloudflare Worker-URL</label><input id="st-mollieworkerurl" type="text" value="${escapeHtml(settings.mollieWorkerUrl||'')}" placeholder="https://chirokas-mollie.jouwnaam.workers.dev"></div>
+      <button class="btn btn-primary btn-block" onclick="saveInstellingen()">Opslaan</button>
     </div>
     <div class="card">
       <h3 class="card-title">Testen</h3>
@@ -1463,12 +1598,36 @@ function renderInstellingen(){
       <button class="btn btn-danger" onclick="resetAll()">Alles wissen</button>
     </div>
   `;
+  drawInschrijfQr();
+}
+function inschrijfLinkUrl(){
+  return location.origin + location.pathname.replace(/[^/]*$/, '') + 'inschrijven.html';
+}
+function copyInschrijfLink(){
+  navigator.clipboard?.writeText(inschrijfLinkUrl()).then(()=> toast('Link gekopieerd.')).catch(()=> toast('Kopiëren niet gelukt.'));
+}
+function drawInschrijfQr(){
+  const host = document.getElementById('inschrijf-qr');
+  if(!host) return;
+  host.innerHTML = '';
+  try{
+    if(typeof QRCode === 'undefined') throw new Error('geen QR-bibliotheek');
+    new QRCode(host, { text: inschrijfLinkUrl(), width:150, height:150, correctLevel: QRCode.CorrectLevel.M });
+  }catch(e){}
 }
 async function saveInstellingen(){
   settings.naam = document.getElementById('st-naam').value.trim();
   settings.rekeninghouder = document.getElementById('st-houder').value.trim();
   settings.iban = document.getElementById('st-iban').value.trim();
   settings.bic = document.getElementById('st-bic').value.trim();
+  const stdBedrag = document.getElementById('st-standaardlidgeld');
+  if(stdBedrag) settings.standaardLidgeld = parseFloat(stdBedrag.value) || 30;
+  const inschrOpen = document.getElementById('st-inschrijvingopen');
+  if(inschrOpen) settings.inschrijvingOpen = inschrOpen.checked;
+  const mollieOn = document.getElementById('st-mollieenabled');
+  if(mollieOn) settings.mollieEnabled = mollieOn.checked;
+  const mollieUrl = document.getElementById('st-mollieworkerurl');
+  if(mollieUrl) settings.mollieWorkerUrl = mollieUrl.value.trim();
   await saveSettings();
   render();
   toast('Instellingen opgeslagen.');
