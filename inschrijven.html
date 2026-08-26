@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Inschrijven — Chirokas</title>
+<title>Inschrijven</title>
 <meta name="theme-color" content="#3F5B3D">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -237,13 +237,13 @@ function render(){
   }
   if(settings.inschrijvingOpen===false){
     app.innerHTML = `
-      <div class="header"><p>Chirokas</p><h1>${settings.naam?escapeHtml(settings.naam):'Inschrijven'}</h1></div>
+      <div class="header"><p>Inschrijven</p><h1>${settings.naam?escapeHtml(settings.naam):'Inschrijven'}</h1></div>
       <div class="card"><div class="banner closed">Inschrijvingen zijn momenteel gesloten. Neem contact op met de leiding als je toch wil inschrijven.</div></div>
     `;
     return;
   }
   app.innerHTML = `
-    <div class="header"><p>Chirokas</p><h1>${settings.naam?escapeHtml(settings.naam):'Inschrijven'}</h1></div>
+    <div class="header"><p>Inschrijven</p><h1>${settings.naam?escapeHtml(settings.naam):'Inschrijven'}</h1></div>
     <div class="card">
       <h3 style="margin-top:0;">Gegevens lid</h3>
       <div class="row2">
@@ -370,9 +370,9 @@ function renderPaymentOptions(member){
   const ibanOk = settings.iban && ibanValid(settings.iban);
   const bedrag = member.bedrag;
   app.innerHTML = `
-    <div class="header"><p>Chirokas</p><h1>Bedankt, ${escapeHtml(member.naam.split(' ')[0])}!</h1></div>
+    <div class="header"><p>Inschrijving ${escapeHtml(settings.naam||'Chiro')}</p><h1>Bedankt, ${escapeHtml(member.naam.split(' ')[0])}!</h1></div>
     <div class="card">
-      <p class="muted">Inschrijving ontvangen. Nog te betalen: <b>${euro(bedrag)}</b>.</p>
+      <p class="muted" style="margin-bottom:16px;">Inschrijving ontvangen. Nog te betalen: <b>${euro(bedrag)}</b>.</p>
       ${!ibanOk ? '<p class="muted">De Chiro heeft nog geen rekeningnummer ingesteld — de leiding neemt contact op over de betaling.</p>' : ''}
       ${ibanOk && settings.mollieEnabled && settings.mollieWorkerUrl ? `
         <button class="btn btn-primary" onclick="startMolliePayment(${member.id})">Betaal nu online (Bancontact/kaart)</button>
@@ -450,12 +450,12 @@ async function renderMollieReturn(memberId){
       m.molliePaymentStatus = 'paid';
       await saveMembers();
       app.innerHTML = `
-        <div class="header"><p>Chirokas</p><h1>Betaald — bedankt!</h1></div>
+        <div class="header"><p>Inschrijving ${escapeHtml(settings.naam||'Chiro')}</p><h1>Betaald — bedankt!</h1></div>
         <div class="card"><p class="muted">De betaling voor ${escapeHtml(m.naam)} is ontvangen en geregistreerd.</p></div>
       `;
     } else {
       app.innerHTML = `
-        <div class="header"><p>Chirokas</p><h1>Nog niet bevestigd</h1></div>
+        <div class="header"><p>Inschrijving ${escapeHtml(settings.naam||'Chiro')}</p><h1>Nog niet bevestigd</h1></div>
         <div class="card"><p class="muted">We hebben nog geen bevestiging van je betaling. Als je toch betaald hebt, komt dit automatisch goed zodra de leiding de betaling controleert — geen zorgen.</p></div>
       `;
     }
@@ -469,6 +469,7 @@ async function renderMollieReturn(memberId){
   try{
     await waitForFirestore();
     await loadAll();
+    if(settings.naam) document.title = `Inschrijven — ${settings.naam}`;
     render();
   }catch(e){
     document.getElementById('app').innerHTML = `<div class="loading">Kon geen verbinding maken.<br><small>${escapeHtml(e.message||'')}</small></div>`;
