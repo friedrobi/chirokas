@@ -463,17 +463,22 @@ function renderAfdelingBreakdown(){
     const groupLedger = ledger.filter(e=>!e.isTest && (e.afdeling||'')===key && e.datum.slice(0,4)===String(year));
     const inc = groupLedger.filter(e=>e.type==='in').reduce((s,e)=>s+e.bedrag,0);
     const exp = groupLedger.filter(e=>e.type==='out').reduce((s,e)=>s+e.bedrag,0);
-    return { naam: g, ledenCount: groupMembers.length, openstaand: groupMembers.filter(m=>!m.paidThisYear).length, inc, exp, saldo: inc-exp };
+    return { naam: g, key, ledenCount: groupMembers.length, openstaand: groupMembers.filter(m=>!m.paidThisYear).length, inc, exp, saldo: inc-exp };
   }).filter(r=> r.ledenCount>0 || r.inc>0 || r.exp>0);
   if(rows.length===0) return '';
   return `
     <div class="card">
       <h3 class="card-title">Per afdeling (${year})</h3>
+      <p class="muted" style="margin-bottom:8px;">Klik op een afdeling voor de ledenlijst — ook handig om leden zonder afdeling op te sporen.</p>
       <div class="table-scroll"><table><thead><tr><th>Afdeling</th><th>Leden</th><th>Openstaand</th><th style="text-align:right;">Inkomsten</th><th style="text-align:right;">Uitgaven</th><th style="text-align:right;">Saldo</th></tr></thead><tbody>
-      ${rows.map(r=>`<tr><td>${escapeHtml(r.naam)}</td><td class="tnum">${r.ledenCount}</td><td class="tnum">${r.openstaand}</td><td class="tnum amt-in" style="text-align:right;">${euro(r.inc)}</td><td class="tnum amt-out" style="text-align:right;">${euro(r.exp)}</td><td class="tnum" style="text-align:right; font-weight:600;">${euro(r.saldo)}</td></tr>`).join('')}
+      ${rows.map(r=>`<tr onclick="drillIntoAfdeling('${r.key}')" style="cursor:pointer;" title="Bekijk leden in ${escapeHtml(r.naam)}"><td>${r.key===''?`<span class="badge-warn">${escapeHtml(r.naam)}</span>`:escapeHtml(r.naam)} ›</td><td class="tnum">${r.ledenCount}</td><td class="tnum">${r.openstaand}</td><td class="tnum amt-in" style="text-align:right;">${euro(r.inc)}</td><td class="tnum amt-out" style="text-align:right;">${euro(r.exp)}</td><td class="tnum" style="text-align:right; font-weight:600;">${euro(r.saldo)}</td></tr>`).join('')}
       </tbody></table></div>
     </div>
   `;
+}
+function drillIntoAfdeling(naam){
+  ledenAfdelingFilter = naam || '__geen__';
+  setTab('leden');
 }
 
 function renderDashboard(){
@@ -543,6 +548,7 @@ function renderLeden(){
       <label>Filter op afdeling</label>
       <select id="leden-afdeling-filter" onchange="toggleLedenAfdelingFilter()">
         <option value="" ${!ledenAfdelingFilter?'selected':''}>Alle afdelingen</option>
+        <option value="__geen__" ${ledenAfdelingFilter==='__geen__'?'selected':''}>Geen afdeling (op te sporen)</option>
         ${AFDELINGEN.map(a=>`<option value="${a}" ${ledenAfdelingFilter===a?'selected':''}>${a}</option>`).join('')}
       </select>
       <button class="btn btn-ghost btn-block" style="margin-top:10px;" onclick="exportMembersExcel()">Exporteer ledenlijst naar Excel</button>
@@ -550,7 +556,9 @@ function renderLeden(){
     <div id="member-list"></div>
   `;
   const list = document.getElementById('member-list');
-  const shown = ledenAfdelingFilter ? members.filter(m=>m.afdeling===ledenAfdelingFilter) : members;
+  const shown = !ledenAfdelingFilter ? members
+    : ledenAfdelingFilter==='__geen__' ? members.filter(m=>!m.afdeling)
+    : members.filter(m=>m.afdeling===ledenAfdelingFilter);
   if(members.length===0){
     list.innerHTML = `<p class="empty">Nog geen leden toegevoegd.</p>`;
     return;
