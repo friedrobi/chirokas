@@ -1015,14 +1015,14 @@ async function markPaid(i, amount, ogmFormatted, ogmRaw){
     omschrijving = `Lidgeld ${members[i].naam} (${ogmFormatted})`;
     afdeling = members[i].afdeling || '';
   }
-  ledger.push({ id: Date.now(), datum: todayStr(), omschrijving, categorie:'Lidgeld', bedrag: amount, type:'in', afdeling, isTest, ogmRaw: ogmRaw || null });
+  ledger.push({ id: Date.now(), datum: todayStr(), omschrijving, categorie:'Lidgeld', bedrag: amount, type:'in', afdeling, isTest, ogmRaw: ogmRaw || null, codaKey: ogmRaw || null });
   await saveLedger();
   closeQrModal();
   render();
   toast(isTest ? 'Testbetaling geregistreerd — telt niet mee in het echte saldo.' : 'Betaling geregistreerd in de boekhouding.');
 }
 
-/* ---------- Rekeninguittreksel importeren (CODA) & afpunten ---------- */
+/* ---------- Rekeninguittreksel importeren (CODA) & boeken ---------- */
 let codaTransactions = [];
 
 function codaField(line, start, end){ return line.substring(start-1, end); }
@@ -1077,15 +1077,21 @@ function parseCoda(text){
       if(byVolgnummer[volgnummer] && naam) byVolgnummer[volgnummer].tegenpartij = naam;
     }
   }
-  return transactions.filter(t=>t.type==='in' && t.bedrag>0);
+  return transactions.filter(t=>t.bedrag>0);
+}
+
+function computeCodaKey(tx){
+  return tx.ogmRaw || `${tx.datum}|${tx.bedrag.toFixed(2)}|${tx.type}|${(tx.vrijeMededeling||'').trim()}`;
 }
 
 function matchCodaTx(tx){
-  if(!tx.ogmRaw) return { status:'geen-ref' };
-  if(ledger.some(e=>e.ogmRaw === tx.ogmRaw)) return { status:'geboekt' };
-  const idx = members.findIndex(m=>!m.paidThisYear && !m.isTest && m.openOgm && m.openOgm.raw === tx.ogmRaw);
-  if(idx>=0) return { status:'match', memberIndex: idx };
-  return { status:'geen-match' };
+  const key = computeCodaKey(tx);
+  if(ledger.some(e=>e.codaKey === key)) return { status:'geboekt' };
+  if(tx.type==='in' && tx.ogmRaw){
+    const idx = members.findIndex(m=>!m.paidThisYear && !m.isTest && m.openOgm && m.openOgm.raw === tx.ogmRaw);
+    if(idx>=0) return { status:'match', memberIndex: idx };
+  }
+  return { status:'open' };
 }
 
 async function markPaidFromCoda(memberIndex, tx){
@@ -1094,8 +1100,30 @@ async function markPaidFromCoda(memberIndex, tx){
   m.openOgm = null;
   await saveMembers();
   const ref = tx.ogmRaw ? formatOgmDisplay(tx.ogmRaw) : (tx.vrijeMededeling || tx.tegenpartij || '');
-  ledger.push({ id: Date.now(), datum: tx.datum, omschrijving: `Lidgeld ${m.naam} (rekeninguittreksel${ref?': '+ref:''})`, categorie:'Lidgeld', bedrag: tx.bedrag, type:'in', afdeling: m.afdeling||'', isTest: !!m.isTest, ogmRaw: tx.ogmRaw||null });
+  ledger.push({ id: Date.now(), datum: tx.datum, omschrijving: `Lidgeld ${m.naam} (rekeninguittreksel${ref?': '+ref:''})`, categorie:'Lidgeld', bedrag: tx.bedrag, type:'in', afdeling: m.afdeling||'', isTest: !!m.isTest, ogmRaw: tx.ogmRaw||null, codaKey: computeCodaKey(tx) });
   await saveLedger();
+}
+
+async function bookCodaTxAsMember(idx, memberIndex){
+  const tx = codaTransactions[idx];
+  await markPaidFromCoda(parseInt(memberIndex,10), tx);
+  codaTransactions.splice(idx,1);
+  render();
+  toast('Betaling gekoppeld en afgepunt.');
+}
+
+async function bookCodaTxGeneral(idx){
+  const tx = codaTransactions[idx];
+  const catSel = document.getElementById(`coda-cat-${idx}`);
+  const afdelingSel = document.getElementById(`coda-afdeling-${idx}`);
+  const categorie = catSel.value;
+  const afdeling = afdelingSel ? afdelingSel.value : '';
+  const omschrijving = tx.vrijeMededeling || tx.tegenpartij || (tx.ogmRaw ? formatOgmDisplay(tx.ogmRaw) : (tx.type==='in' ? 'Inkomst rekeninguittreksel' : 'Uitgave rekeninguittreksel'));
+  ledger.push({ id: Date.now(), datum: tx.datum, omschrijving, categorie, bedrag: tx.bedrag, type: tx.type, afdeling, isTest: false, ogmRaw: tx.ogmRaw||null, codaKey: computeCodaKey(tx) });
+  await saveLedger();
+  codaTransactions.splice(idx,1);
+  render();
+  toast('Boeking toegevoegd.');
 }
 
 async function handleCodaImport(evt){
@@ -1108,8 +1136,8 @@ async function handleCodaImport(evt){
     const txs = parseCoda(text);
     codaTransactions = txs;
     status.textContent = txs.length===0
-      ? 'Geen inkomende verrichtingen gevonden. Is dit een geldig CODA-bestand (.coda)?'
-      : `${txs.length} inkomende verrichting(en) gevonden.`;
+      ? 'Geen verrichtingen gevonden. Is dit een geldig CODA-bestand (.coda)?'
+      : `${txs.length} verrichting(en) gevonden.`;
   }catch(e){
     status.textContent = 'Kon dit bestand niet lezen. Vraag bij je bank een CODA-bestand (.coda) van je rekeninguittreksels op.';
     codaTransactions = [];
@@ -1127,14 +1155,6 @@ async function confirmCodaMatch(txIdx){
   render();
   toast('Betaling afgepunt.');
 }
-async function manualCodaMatch(txIdx, memberIndex){
-  if(memberIndex === '' || memberIndex==null) return;
-  const tx = codaTransactions[txIdx];
-  await markPaidFromCoda(parseInt(memberIndex,10), tx);
-  codaTransactions.splice(txIdx,1);
-  render();
-  toast('Betaling gekoppeld en afgepunt.');
-}
 function dismissCodaTx(txIdx){
   codaTransactions.splice(txIdx,1);
   renderBoekhouding();
@@ -1149,8 +1169,8 @@ async function confirmAllCodaMatches(){
   for(const {tx, memberIndex} of toProcess){
     await markPaidFromCoda(memberIndex, tx);
   }
-  const processedRefs = new Set(toProcess.map(p=>p.tx.ogmRaw));
-  codaTransactions = codaTransactions.filter(tx=> !processedRefs.has(tx.ogmRaw));
+  const processedKeys = new Set(toProcess.map(p=>computeCodaKey(p.tx)));
+  codaTransactions = codaTransactions.filter(tx=> !processedKeys.has(computeCodaKey(tx)));
   render();
   toast(`${toProcess.length} betaling(en) afgepunt.`);
 }
@@ -1167,22 +1187,32 @@ function renderCodaReview(){
     } else if(r.status==='match'){
       actionHtml = `<span class="pill paid">${escapeHtml(members[r.memberIndex].naam)}</span> <button class="btn btn-primary btn-sm" onclick="confirmCodaMatch(${idx})">Bevestig</button>`;
     } else {
+      const cats = tx.type==='in' ? INCOME_CATS : EXPENSE_CATS;
       actionHtml = `
-        <select id="coda-select-${idx}" style="width:auto; display:inline-block; font-size:12.5px; padding:6px 8px;">
-          <option value="">Koppel aan lid…</option>
-          ${openMembersOptions.map(m=>`<option value="${members.indexOf(m)}">${escapeHtml(m.naam)}</option>`).join('')}
-        </select>
-        <button class="btn btn-ghost btn-sm" onclick="manualCodaMatch(${idx}, document.getElementById('coda-select-${idx}').value)">Koppel</button>
-        <button class="del-x" onclick="dismissCodaTx(${idx})" title="Negeren">✕</button>`;
+        <div style="display:flex; flex-direction:column; gap:4px; align-items:flex-start;">
+          <select id="coda-cat-${idx}" style="font-size:12.5px; padding:6px 8px;">
+            ${cats.map(c=>`<option value="${c}">${c}</option>`).join('')}
+          </select>
+          <select id="coda-afdeling-${idx}" style="font-size:12.5px; padding:6px 8px;">${afdelingOptions('')}</select>
+          <button class="btn btn-primary btn-sm" onclick="bookCodaTxGeneral(${idx})">Boek als ${tx.type==='in'?'inkomst':'uitgave'}</button>
+          ${tx.type==='in' ? `
+          <select id="coda-select-${idx}" style="font-size:12.5px; padding:6px 8px;">
+            <option value="">— of koppel aan lid als lidgeld —</option>
+            ${openMembersOptions.map(m=>`<option value="${members.indexOf(m)}">${escapeHtml(m.naam)}</option>`).join('')}
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="const v=document.getElementById('coda-select-${idx}').value; if(v) bookCodaTxAsMember(${idx}, v);">Koppel aan lid</button>` : ''}
+          <button class="del-x" onclick="dismissCodaTx(${idx})" title="Negeren">✕ negeren</button>
+        </div>`;
     }
-    return `<tr><td class="tnum">${tx.datum}</td><td class="tnum amt-in">+${euro(tx.bedrag)}</td><td>${escapeHtml(omschrijving)}${tx.tegenpartij?`<br><span class="muted">${escapeHtml(tx.tegenpartij)}</span>`:''}</td><td>${actionHtml}</td></tr>`;
+    return `<tr><td class="tnum">${tx.datum}</td><td class="tnum ${tx.type==='in'?'amt-in':'amt-out'}">${tx.type==='in'?'+':'-'}${euro(tx.bedrag)}</td><td>${escapeHtml(omschrijving)}${tx.tegenpartij?`<br><span class="muted">${escapeHtml(tx.tegenpartij)}</span>`:''}</td><td>${actionHtml}</td></tr>`;
   }).join('');
   const matchCount = codaTransactions.filter(tx=>matchCodaTx(tx).status==='match').length;
   return `
     <div class="card">
       <h3 class="card-title">Te bevestigen (${codaTransactions.length})</h3>
-      ${matchCount>0 ? `<button class="btn btn-primary" style="margin-bottom:10px;" onclick="confirmAllCodaMatches()">Bevestig alle ${matchCount} voorgestelde koppeling(en)</button>` : ''}
-      <div class="table-scroll"><table><thead><tr><th>Datum</th><th>Bedrag</th><th>Mededeling</th><th>Koppeling</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <p class="muted" style="margin-bottom:8px;">Elke verrichting kan als lidgeld aan een lid gekoppeld worden (indien inkomst), of als gewone inkomst of uitgave geboekt worden met een categorie naar keuze.</p>
+      ${matchCount>0 ? `<button class="btn btn-primary" style="margin-bottom:10px;" onclick="confirmAllCodaMatches()">Bevestig alle ${matchCount} voorgestelde lidgeld-koppeling(en)</button>` : ''}
+      <div class="table-scroll"><table><thead><tr><th>Datum</th><th>Bedrag</th><th>Mededeling</th><th>Boeken</th></tr></thead><tbody>${rows}</tbody></table></div>
     </div>
   `;
 }
@@ -1207,7 +1237,7 @@ function renderBoekhouding(){
   el.innerHTML = `
     <div class="card">
       <h3 class="card-title">Rekeninguittreksel importeren</h3>
-      <p class="muted">Vraag bij je bank een <b>CODA-bestand</b> (.coda) van je rekeninguittreksels op — dat is het gestandaardiseerde formaat dat alle Belgische banken aanbieden, en waarin de gestructureerde mededeling herkenbaar staat. Chirokas leest het bestand, stelt automatisch koppelingen voor met leden die nog moeten betalen, en boekt pas na jouw bevestiging.</p>
+      <p class="muted">Vraag bij je bank een <b>CODA-bestand</b> (.coda) van je rekeninguittreksels op — dat is het gestandaardiseerde formaat dat alle Belgische banken aanbieden, en waarin de gestructureerde mededeling herkenbaar staat. Chirokas leest alle inkomsten en uitgaven uit het bestand, stelt automatisch een koppeling voor bij lidgeld van leden die nog moeten betalen, en laat elke andere verrichting boeken als gewone inkomst of uitgave met een categorie naar keuze — telkens pas na jouw bevestiging.</p>
       <input id="coda-file" type="file" accept=".coda,.txt" style="margin-top:8px;" onchange="handleCodaImport(event)">
       <div id="coda-status" class="muted" style="margin-top:8px;"></div>
     </div>
