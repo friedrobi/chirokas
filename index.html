@@ -291,6 +291,13 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="member-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeMemberDetail()">✕</button>
+    <div id="member-modal-body"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -538,6 +545,7 @@ function renderLeden(){
         <option value="" ${!ledenAfdelingFilter?'selected':''}>Alle afdelingen</option>
         ${AFDELINGEN.map(a=>`<option value="${a}" ${ledenAfdelingFilter===a?'selected':''}>${a}</option>`).join('')}
       </select>
+      <button class="btn btn-ghost btn-block" style="margin-top:10px;" onclick="exportMembersExcel()">Exporteer ledenlijst naar Excel</button>
     </div>
     <div id="member-list"></div>
   `;
@@ -555,10 +563,9 @@ function renderLeden(){
     const i = members.indexOf(m);
     return `
     <div class="member-card ${m.paidThisYear?'paid':'due'}">
-      <div>
-        <div class="member-name">${escapeHtml(m.naam)}</div>
+      <div onclick="openMemberDetail(${i})" style="cursor:pointer; flex:1;" title="Klik voor details">
+        <div class="member-name">${escapeHtml(m.naam)} ${m.afdeling ? `<span class="cat-tag">${escapeHtml(m.afdeling)}</span>` : ''}</div>
         <div class="member-sub">Lidgeld ${euro(m.bedrag)} ${m.email? '· '+escapeHtml(m.email):''} ${m.gsm? '· '+escapeHtml(m.gsm):''}</div>
-        <select style="margin-top:6px; font-size:12.5px; padding:5px 7px;" onchange="setMemberAfdeling(${i}, this.value)">${afdelingOptions(m.afdeling||'')}</select>
       </div>
       <div class="member-actions">
         ${m.isTest ? '<span class="pill test">Test</span>' : ''}
@@ -596,6 +603,75 @@ async function removeMember(i){
   render();
 }
 
+function exportMembersExcel(){
+  if(typeof XLSX === 'undefined'){ toast('Excel-bibliotheek niet geladen.'); return; }
+  const rows = members.filter(m=>!m.isTest).map(m=>({
+    Naam: m.naam,
+    Lidgeld: m.bedrag,
+    'E-mail': m.email||'',
+    Gsm: m.gsm||'',
+    Afdeling: m.afdeling||'',
+    Betaald: m.paidThisYear ? 'Ja' : 'Nee',
+    Notities: m.notities||''
+  }));
+  if(rows.length===0){ toast('Geen leden om te exporteren.'); return; }
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Leden');
+  XLSX.writeFile(wb, `chirokas-leden-${todayStr()}.xlsx`);
+}
+
+/* ---------- Lid-detail (klik op een lid voor volledig record) ---------- */
+let memberDetailIdx = null;
+function openMemberDetail(i){
+  memberDetailIdx = i;
+  document.getElementById('member-modal').classList.add('open');
+  renderMemberDetail();
+}
+function closeMemberDetail(){
+  document.getElementById('member-modal').classList.remove('open');
+  memberDetailIdx = null;
+}
+function renderMemberDetail(){
+  const m = members[memberDetailIdx];
+  const body = document.getElementById('member-modal-body');
+  body.innerHTML = `
+    <h3 style="margin-top:0;">${escapeHtml(m.naam)}</h3>
+    <p class="muted" style="margin-top:-8px;">Status: ${m.paidThisYear?'betaald':'openstaand'}${m.isTest?' · testlid':''}</p>
+    <div class="field"><label>Naam</label><input id="md-naam" type="text" value="${escapeHtml(m.naam)}"></div>
+    <div class="row2">
+      <div class="field"><label>Lidgeld</label><input id="md-bedrag" type="number" step="0.01" value="${m.bedrag}"></div>
+      <div class="field"><label>Afdeling</label><select id="md-afdeling">${afdelingOptions(m.afdeling||'')}</select></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>E-mail</label><input id="md-email" type="email" value="${escapeHtml(m.email||'')}"></div>
+      <div class="field"><label>Gsm</label><input id="md-gsm" type="tel" value="${escapeHtml(m.gsm||'')}"></div>
+    </div>
+    <div class="field"><label>Notities (allergieën, bijzonderheden, contactpersoon...)</label>
+      <textarea id="md-notities" rows="4" style="width:100%; padding:9px 10px; border:1px solid var(--rope-line); border-radius:8px; font-family:inherit; font-size:14px;">${escapeHtml(m.notities||'')}</textarea>
+    </div>
+    <button class="btn btn-primary btn-block" onclick="saveMemberDetail()">Opslaan</button>
+  `;
+}
+async function saveMemberDetail(){
+  const i = memberDetailIdx;
+  if(i==null || !members[i]) return;
+  const naam = document.getElementById('md-naam').value.trim();
+  const bedrag = parseFloat(document.getElementById('md-bedrag').value);
+  if(!naam){ toast('Naam mag niet leeg zijn.'); return; }
+  if(!bedrag || bedrag<=0){ toast('Geef een geldig lidgeldbedrag in.'); return; }
+  members[i].naam = naam;
+  members[i].bedrag = bedrag;
+  members[i].afdeling = document.getElementById('md-afdeling').value;
+  members[i].email = document.getElementById('md-email').value.trim();
+  members[i].gsm = document.getElementById('md-gsm').value.trim();
+  members[i].notities = document.getElementById('md-notities').value.trim();
+  await saveMembers();
+  closeMemberDetail();
+  render();
+  toast('Lid bijgewerkt.');
+}
+
 /* ---------- Excel import ---------- */
 function findKey(row, patterns){
   const keys = Object.keys(row);
@@ -628,12 +704,14 @@ async function handleExcelImport(evt){
       const emailKey = findKey(row, [/e-?mail/i]);
       const gsmKey = findKey(row, [/gsm/i, /mobiel/i, /telefoon/i, /tel\.?$/i, /phone/i]);
       const afdelingKey = findKey(row, [/afdeling/i, /groep/i, /^tak$/i]);
+      const notitiesKey = findKey(row, [/notitie/i, /notes?/i, /opmerking/i]);
       const naam = naamKey ? String(row[naamKey]).trim() : '';
       if(!naam){ skipped++; continue; }
       let bedrag = bedragKey ? parseFloat(String(row[bedragKey]).replace(',', '.')) : NaN;
       if(isNaN(bedrag) || bedrag < 0) bedrag = 0;
       const email = emailKey ? String(row[emailKey]).trim() : '';
       const gsm = gsmKey ? String(row[gsmKey]).trim() : '';
+      const notities = notitiesKey ? String(row[notitiesKey]).trim() : '';
       const afdelingRaw = afdelingKey ? String(row[afdelingKey]).trim() : '';
       const afdeling = afdelingRaw ? (AFDELINGEN.find(a=>a.toLowerCase()===afdelingRaw.toLowerCase()) || '') : '';
       if(afdelingRaw && !afdeling) onbekendeAfdeling++;
@@ -644,9 +722,10 @@ async function handleExcelImport(evt){
         if(email) members[existing].email = email;
         if(gsm) members[existing].gsm = gsm;
         if(afdeling) members[existing].afdeling = afdeling;
+        if(notities) members[existing].notities = notities;
         updated++;
       }else{
-        members.push({ naam, bedrag, email, gsm, afdeling, paidThisYear:false, isTest: !!settings.testMode });
+        members.push({ naam, bedrag, email, gsm, afdeling, notities, paidThisYear:false, isTest: !!settings.testMode });
         added++;
       }
     }
