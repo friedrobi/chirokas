@@ -298,6 +298,13 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="ledger-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeLedgerDetail()">✕</button>
+    <div id="ledger-modal-body"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -507,7 +514,7 @@ function renderDashboard(){
       <h3 class="card-title">Recente bewegingen</h3>
       ${recent.length===0 ? `<p class="empty">Nog geen boekingen. Voeg leden toe of registreer een uitgave in "Boekhouding".</p>` :
         `<div class="table-scroll"><table><thead><tr><th>Datum</th><th>Omschrijving</th><th>Categorie</th><th style="text-align:right;">Bedrag</th></tr></thead><tbody>
-          ${recent.map(e=>`<tr><td class="tnum">${e.datum}</td><td>${escapeHtml(e.omschrijving)}</td><td><span class="cat-tag">${escapeHtml(e.categorie)}</span></td><td style="text-align:right;" class="tnum ${e.type==='in'?'amt-in':'amt-out'}">${e.type==='in'?'+':'-'}${euro(e.bedrag)}</td></tr>`).join('')}
+          ${recent.map(e=>`<tr onclick="openLedgerDetail(${e.id})" style="cursor:pointer;" title="Klik voor details"><td class="tnum">${e.datum}</td><td>${escapeHtml(e.omschrijving)} ${e.bijlage?'📎':''}</td><td><span class="cat-tag">${escapeHtml(e.categorie)}</span></td><td style="text-align:right;" class="tnum ${e.type==='in'?'amt-in':'amt-out'}">${e.type==='in'?'+':'-'}${euro(e.bedrag)}</td></tr>`).join('')}
         </tbody></table></div>`}
     </div>
   `;
@@ -1273,7 +1280,7 @@ function renderBoekhouding(){
       </div>
       ${sorted.length===0 ? `<p class="empty">${boekhoudingAfdelingFilter ? 'Geen boekingen voor deze afdeling.' : 'Nog geen boekingen.'}</p>` :
         `<div class="table-scroll"><table><thead><tr><th>Datum</th><th>Omschrijving</th><th>Categorie</th><th>Afdeling</th><th style="text-align:right;">Bedrag</th><th>Bijlage</th><th></th></tr></thead><tbody>
-        ${sorted.map(e=>`<tr><td class="tnum">${e.datum}</td><td>${escapeHtml(e.omschrijving)} ${e.isTest?'<span class="pill test">Test</span>':''}</td><td><span class="cat-tag">${escapeHtml(e.categorie)}</span></td><td>${e.afdeling ? `<span class="cat-tag">${escapeHtml(e.afdeling)}</span>` : ''}</td><td style="text-align:right;" class="tnum ${e.type==='in'?'amt-in':'amt-out'}">${e.type==='in'?'+':'-'}${euro(e.bedrag)}</td><td>${e.bijlage ? `<a href="${e.bijlage.url}" target="_blank" rel="noopener" title="${escapeHtml(e.bijlage.name)}">📎</a> <button class="del-x" onclick="removeAttachment(${e.id})" title="Bijlage verwijderen">✕</button>` : `<input type="file" id="attach-${e.id}" accept="image/*,.pdf" style="display:none" onchange="handleAttachUpload(${e.id}, event)"><button class="del-x" onclick="document.getElementById('attach-${e.id}').click()" title="Bijlage toevoegen">📎+</button>`}</td><td><button class="del-x" onclick="removeLedgerEntry(${e.id})">✕</button></td></tr>`).join('')}
+        ${sorted.map(e=>`<tr><td class="tnum" onclick="openLedgerDetail(${e.id})" style="cursor:pointer;" title="Klik voor details">${e.datum}</td><td onclick="openLedgerDetail(${e.id})" style="cursor:pointer;" title="Klik voor details">${escapeHtml(e.omschrijving)} ${e.isTest?'<span class="pill test">Test</span>':''}</td><td><span class="cat-tag">${escapeHtml(e.categorie)}</span></td><td>${e.afdeling ? `<span class="cat-tag">${escapeHtml(e.afdeling)}</span>` : ''}</td><td style="text-align:right;" class="tnum ${e.type==='in'?'amt-in':'amt-out'}">${e.type==='in'?'+':'-'}${euro(e.bedrag)}</td><td>${e.bijlage ? '📎' : ''}</td><td><button class="del-x" onclick="removeLedgerEntry(${e.id})">✕</button></td></tr>`).join('')}
         </tbody></table></div>`}
     </div>
   `;
@@ -1311,33 +1318,110 @@ async function addLedgerEntry(){
   render();
   toast(settings.testMode ? 'Testboeking toegevoegd.' : 'Boeking toegevoegd.');
 }
-async function handleAttachUpload(entryId, evt){
+async function removeLedgerEntry(id){
+  ledger = ledger.filter(e=>e.id!==id);
+  await saveLedger();
+  render();
+}
+
+/* ---------- Boeking-detail (klik op een boeking voor volledig record + bijlage) ---------- */
+let ledgerDetailId = null;
+function openLedgerDetail(id){
+  ledgerDetailId = id;
+  document.getElementById('ledger-modal').classList.add('open');
+  renderLedgerDetail();
+}
+function closeLedgerDetail(){
+  document.getElementById('ledger-modal').classList.remove('open');
+  ledgerDetailId = null;
+}
+function renderBijlagePreview(bijlage){
+  const isImg = (bijlage.type||'').startsWith('image/');
+  const isPdf = (bijlage.type||'').includes('pdf') || bijlage.url.toLowerCase().endsWith('.pdf');
+  let preview = '';
+  if(isImg){
+    preview = `<img src="${bijlage.url}" style="max-width:100%; border-radius:8px; border:1px solid var(--rope-line); display:block;">`;
+  } else if(isPdf){
+    preview = `<iframe src="${bijlage.url}" style="width:100%; height:380px; border:1px solid var(--rope-line); border-radius:8px;"></iframe>`;
+  }
+  return `${preview}<p class="muted" style="margin-top:6px;"><a href="${bijlage.url}" target="_blank" rel="noopener">${escapeHtml(bijlage.name)} — open in nieuw tabblad</a></p>`;
+}
+function renderLedgerDetail(){
+  const e = ledger.find(x=>x.id===ledgerDetailId);
+  const body = document.getElementById('ledger-modal-body');
+  if(!e){ body.innerHTML = '<p class="muted">Deze boeking bestaat niet meer.</p>'; return; }
+  const cats = e.type==='in' ? INCOME_CATS : EXPENSE_CATS;
+  body.innerHTML = `
+    <h3 style="margin-top:0;">${e.type==='in'?'Inkomst':'Uitgave'}${e.isTest?' <span class="pill test">Test</span>':''}</h3>
+    <div class="field"><label>Omschrijving</label><input id="ld-omschrijving" type="text" value="${escapeHtml(e.omschrijving)}"></div>
+    <div class="row2">
+      <div class="field"><label>Datum</label><input id="ld-datum" type="date" value="${e.datum}"></div>
+      <div class="field"><label>Bedrag</label><input id="ld-bedrag" type="number" step="0.01" value="${e.bedrag}"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Categorie</label><select id="ld-categorie">${cats.map(c=>`<option value="${c}" ${e.categorie===c?'selected':''}>${c}</option>`).join('')}</select></div>
+      <div class="field"><label>Afdeling</label><select id="ld-afdeling">${afdelingOptions(e.afdeling||'')}</select></div>
+    </div>
+    <div class="field">
+      <label>Bijlage</label>
+      ${e.bijlage ? renderBijlagePreview(e.bijlage) : `<p class="muted">Geen bijlage.</p>`}
+      <input type="file" id="ld-bijlage-file" accept="image/*,.pdf" style="display:none" onchange="handleLedgerDetailAttach(event)">
+      <div class="row2" style="margin-top:8px;">
+        <button class="btn btn-ghost" onclick="document.getElementById('ld-bijlage-file').click()">${e.bijlage?'Vervang bijlage':'Bijlage toevoegen'}</button>
+        ${e.bijlage ? `<button class="btn btn-ghost" onclick="removeLedgerAttachment()">Verwijder bijlage</button>` : '<span></span>'}
+      </div>
+    </div>
+    <button class="btn btn-primary btn-block" style="margin-top:6px;" onclick="saveLedgerDetail()">Opslaan</button>
+    <button class="btn btn-danger btn-block" style="margin-top:8px;" onclick="deleteLedgerFromDetail()">Boeking verwijderen</button>
+  `;
+}
+async function saveLedgerDetail(){
+  const idx = ledger.findIndex(x=>x.id===ledgerDetailId);
+  if(idx<0) return;
+  const omschrijving = document.getElementById('ld-omschrijving').value.trim();
+  const bedrag = parseFloat(document.getElementById('ld-bedrag').value);
+  if(!omschrijving){ toast('Omschrijving mag niet leeg zijn.'); return; }
+  if(!bedrag || bedrag<=0){ toast('Geef een geldig bedrag in.'); return; }
+  ledger[idx].omschrijving = omschrijving;
+  ledger[idx].datum = document.getElementById('ld-datum').value || ledger[idx].datum;
+  ledger[idx].bedrag = bedrag;
+  ledger[idx].categorie = document.getElementById('ld-categorie').value;
+  ledger[idx].afdeling = document.getElementById('ld-afdeling').value;
+  await saveLedger();
+  closeLedgerDetail();
+  render();
+  toast('Boeking bijgewerkt.');
+}
+async function handleLedgerDetailAttach(evt){
   const file = evt.target.files[0];
   if(!file) return;
   if(file.size > 10*1024*1024){ toast('Bestand is te groot (max 10MB).'); return; }
-  const idx = ledger.findIndex(e=>e.id===entryId);
+  const idx = ledger.findIndex(x=>x.id===ledgerDetailId);
   if(idx<0) return;
   toast('Bijlage wordt geüpload…');
   try{
-    ledger[idx].bijlage = await uploadAttachment(file, entryId);
+    ledger[idx].bijlage = await uploadAttachment(file, ledgerDetailId);
     await saveLedger();
     render();
+    renderLedgerDetail();
     toast('Bijlage toegevoegd.');
   }catch(e){
     toast('Uploaden mislukt.');
   }
 }
-async function removeAttachment(entryId){
-  const idx = ledger.findIndex(e=>e.id===entryId);
+async function removeLedgerAttachment(){
+  const idx = ledger.findIndex(x=>x.id===ledgerDetailId);
   if(idx<0) return;
   ledger[idx].bijlage = null;
   await saveLedger();
   render();
+  renderLedgerDetail();
+  toast('Bijlage verwijderd.');
 }
-async function removeLedgerEntry(id){
-  ledger = ledger.filter(e=>e.id!==id);
-  await saveLedger();
-  render();
+async function deleteLedgerFromDetail(){
+  if(!confirm('Deze boeking verwijderen?')) return;
+  await removeLedgerEntry(ledgerDetailId);
+  closeLedgerDetail();
 }
 
 /* ---------- Instellingen ---------- */
