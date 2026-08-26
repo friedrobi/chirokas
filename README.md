@@ -86,6 +86,18 @@ een gratis EmailJS-account nodig:
 Zonder deze stappen blijft "Open e-mail" gewoon werken — enkel de
 "Verstuur"-knoppen en de bulkverzending vereisen deze koppeling.
 
+## Per afdeling opsplitsen
+
+Elk lid kan een afdeling krijgen (Pagatters, Speelclub, Rakkers, Kwiks,
+Tippers, Toppers, Kerels, Tiptiens, Aspi's, Leiding — instelbaar per
+lid in "Leden", of via een "Afdeling"-kolom bij Excel-import). Elke
+boeking kan dat ook, optioneel — lidgeldbetalingen krijgen de afdeling
+van het lid automatisch mee, zonder dat je dat zelf moet aanduiden.
+"Overzicht" toont een tabel met inkomsten, uitgaven en openstaande
+lidgelden per afdeling; "Boekhouding" heeft een filter om de
+boekingenlijst tot één afdeling te beperken (het echte saldo bovenaan
+blijft altijd het totaal van alle afdelingen samen).
+
 ## Ouders bereiken via WhatsApp
 
 Werkt zonder enige instelling — geen account, geen koppeling nodig.
