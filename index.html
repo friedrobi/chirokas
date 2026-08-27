@@ -847,9 +847,12 @@ function renderMemberDetail(){
       <div class="field"><label>Lidgeld</label><input id="md-bedrag" type="number" step="0.01" value="${m.bedrag}"></div>
       <div class="field"><label>Afdeling</label><select id="md-afdeling">${afdelingOptions(m.afdeling||'')}</select></div>
     </div>
-    <div class="field"><label>Gezin (koppelt broers/zussen voor kampprijs)</label>
-      <input id="md-gezin" type="text" list="gezin-datalist" value="${escapeHtml(m.gezinsnaam||'')}" placeholder="bv. familienaam">
-      <datalist id="gezin-datalist">${[...new Set(members.filter(x=>x.gezinsnaam).map(x=>x.gezinsnaam))].map(g=>`<option value="${escapeHtml(g)}">`).join('')}</datalist>
+    <div class="field" style="position:relative;">
+      <label>Gezin (koppelt broers/zussen voor kampprijs)</label>
+      <input id="md-gezin" type="text" autocomplete="off" value="${escapeHtml(m.gezinsnaam||'')}" placeholder="bv. familienaam"
+        oninput="renderGezinSuggesties()" onfocus="renderGezinSuggesties()"
+        onblur="setTimeout(()=>{ const h=document.getElementById('gezin-suggesties'); if(h) h.innerHTML=''; }, 150)">
+      <div id="gezin-suggesties"></div>
     </div>
     ${m.kamp && m.kamp.ingeschreven ? `<p class="muted">Kamp: ${m.kamp.betaald?'betaald':'openstaand'} — ${euro(m.kamp.bedrag)}</p>` : ''}
     <div class="row2">
@@ -882,6 +885,26 @@ function renderMemberDetail(){
     </div>
     <button class="btn btn-primary btn-block" onclick="saveMemberDetail()">Opslaan</button>
   `;
+}
+function renderGezinSuggesties(){
+  const input = document.getElementById('md-gezin');
+  const host = document.getElementById('gezin-suggesties');
+  if(!input || !host) return;
+  const q = input.value.trim().toLowerCase();
+  const alleGezinnen = [...new Set(members.filter(x=>x.gezinsnaam).map(x=>x.gezinsnaam))];
+  const matches = q ? alleGezinnen.filter(g=>g.toLowerCase().includes(q) && g.toLowerCase()!==q) : alleGezinnen;
+  if(matches.length===0){ host.innerHTML=''; return; }
+  host.innerHTML = `
+    <div style="position:absolute; z-index:5; left:0; right:0; background:#fff; border:1px solid var(--rope-line); border-radius:8px; margin-top:2px; box-shadow:var(--shadow); max-height:160px; overflow-y:auto;">
+      ${matches.slice(0,8).map(g=>`<div style="padding:8px 10px; cursor:pointer; font-size:13.5px;" onmousedown="selectGezin('${g.replace(/'/g,"\\'")}')">${escapeHtml(g)}</div>`).join('')}
+    </div>
+  `;
+}
+function selectGezin(naam){
+  const input = document.getElementById('md-gezin');
+  if(input) input.value = naam;
+  const host = document.getElementById('gezin-suggesties');
+  if(host) host.innerHTML = '';
 }
 async function saveMemberDetail(){
   const i = memberDetailIdx;
