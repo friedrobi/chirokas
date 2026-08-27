@@ -15,7 +15,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
   import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
-  import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+  import { getAuth, signInAnonymously, onAuthStateChanged, setPersistence, inMemoryPersistence } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyBQDr0BuVS72KCBNMOyFSnjR3735TkpEMc",
@@ -30,14 +30,25 @@
   const db = getFirestore(fbApp);
   const auth = getAuth(fbApp);
 
-  onAuthStateChanged(auth, (user) => {
-    if (user) {
-      window.__firestore = { doc, getDoc, setDoc, db };
-      window.__firestoreReady = true;
-    }
-  });
-  signInAnonymously(auth).catch((err) => {
-    console.error('Firebase aanmelden mislukt:', err);
+  // Belangrijk: deze pagina meldt zich anoniem aan, maar index.html gebruikt
+  // hetzelfde Firebase-project met een echte hoofdleiding-login. Standaard
+  // deelt Firebase de aanmeldstatus over alle tabbladen van dezelfde site —
+  // zonder deze regel zou een anonieme aanmelding hier de ingelogde sessie
+  // van de leiding in een ander tabblad stilletjes overschrijven. Door de
+  // sessie enkel in het geheugen van dit tabblad te houden, blijft dat apart.
+  setPersistence(auth, inMemoryPersistence).then(() => {
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        window.__firestore = { doc, getDoc, setDoc, db };
+        window.__firestoreReady = true;
+      }
+    });
+    signInAnonymously(auth).catch((err) => {
+      console.error('Firebase aanmelden mislukt:', err);
+      window.__firestoreError = true;
+    });
+  }).catch((err) => {
+    console.error('Kon aanmeldpersistentie niet instellen:', err);
     window.__firestoreError = true;
   });
 </script>
