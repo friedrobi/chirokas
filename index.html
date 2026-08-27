@@ -639,7 +639,7 @@ function renderDashboard(){
       <div class="stat"><div class="v tnum">${openstaand}</div><div class="k">Openstaande lidgelden</div></div>
     </div>
     <div class="card">
-      <a class="btn btn-primary btn-block" href="inschrijven.html" target="_blank" rel="noopener">Nieuw lid inschrijven</a>
+      <a class="btn btn-primary btn-block" href="inschrijven.html?van=app" target="_blank" rel="noopener">Nieuw lid inschrijven</a>
     </div>
     ${isHoofd() ? renderAfdelingBreakdown() : ''}
     <div class="card">
@@ -719,19 +719,6 @@ function renderLeden(){
   const el = document.getElementById('section-leden');
   el.innerHTML = `
     ${renderDupReview()}
-    <div class="card">
-      <h3 class="card-title">Nieuw lid</h3>
-      <div class="row2">
-        <div class="field"><label>Naam lid</label><input id="nl-naam" type="text" placeholder="Voornaam Achternaam"></div>
-        <div class="field"><label>Standaard lidgeld</label><input id="nl-bedrag" type="number" step="0.01" placeholder="30.00"></div>
-      </div>
-      <div class="row2">
-        <div class="field"><label>E-mail ouder (optioneel)</label><input id="nl-email" type="email" placeholder="ouder@voorbeeld.be"></div>
-        <div class="field"><label>Gsm ouder (optioneel)</label><input id="nl-gsm" type="tel" placeholder="0470 12 34 56"></div>
-      </div>
-      <div class="field"><label>Afdeling</label><select id="nl-afdeling" ${isHoofd()?'':'disabled'}>${isHoofd() ? afdelingOptions('') : `<option value="${myAfdeling()}" selected>${escapeHtml(myAfdeling())}</option>`}</select></div>
-      <button class="btn btn-primary btn-block" onclick="addMember()">Lid toevoegen</button>
-    </div>
     ${isHoofd() ? `
     <div class="card">
       <h3 class="card-title">Leden importeren uit Excel</h3>
@@ -797,19 +784,6 @@ async function setMemberAfdeling(i, afdeling){
   render();
 }
 
-async function addMember(){
-  const naam = document.getElementById('nl-naam').value.trim();
-  const bedrag = parseFloat(document.getElementById('nl-bedrag').value);
-  const email = document.getElementById('nl-email').value.trim();
-  const gsm = document.getElementById('nl-gsm').value.trim();
-  const afdeling = document.getElementById('nl-afdeling').value;
-  if(!naam){ toast('Geef een naam in.'); return; }
-  if(!bedrag || bedrag<=0){ toast('Geef een geldig lidgeldbedrag in.'); return; }
-  members.push({ id: Date.now(), naam, bedrag, email, gsm, afdeling, paidThisYear:false, isTest: !!settings.testMode });
-  await saveMembers();
-  render();
-  toast(settings.testMode ? 'Testlid toegevoegd.' : 'Lid toegevoegd.');
-}
 async function removeMember(i){
   if(!confirm(`"${members[i].naam}" verwijderen?`)) return;
   members.splice(i,1);

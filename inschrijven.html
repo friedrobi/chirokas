@@ -227,6 +227,11 @@ let matchResult = { exact:null, fuzzy:[] };
 let confirmedMatch = null; // member object once user confirms "ja, dat ben ik" or exact match found
 let dupIgnored = false;    // user said "nee, nieuw lid" on a fuzzy suggestion
 
+function fromApp(){ return new URLSearchParams(location.search).get('van') === 'app'; }
+function backLinkHtml(){
+  return fromApp() ? `<p style="text-align:center; margin:-8px 0 16px;"><a href="index.html" style="color:var(--forest-dark); font-weight:600; font-size:13px; text-decoration:none;">← Terug naar Chirokas</a></p>` : '';
+}
+
 function render(){
   const app = document.getElementById('app');
   const urlParams = new URLSearchParams(location.search);
@@ -238,12 +243,14 @@ function render(){
   if(settings.inschrijvingOpen===false){
     app.innerHTML = `
       <div class="header"><p>Inschrijven</p><h1>${settings.naam?escapeHtml(settings.naam):'Inschrijven'}</h1></div>
+      ${backLinkHtml()}
       <div class="card"><div class="banner closed">Inschrijvingen zijn momenteel gesloten. Neem contact op met de leiding als je toch wil inschrijven.</div></div>
     `;
     return;
   }
   app.innerHTML = `
     <div class="header"><p>Inschrijven</p><h1>${settings.naam?escapeHtml(settings.naam):'Inschrijven'}</h1></div>
+    ${backLinkHtml()}
     <div class="card">
       <h3 style="margin-top:0;">Gegevens lid</h3>
       <div class="row2">
@@ -271,8 +278,8 @@ function render(){
       <div class="field"><label>Lidgeld</label><p style="margin:0; padding:10px 11px; font-size:15px;">${euro(settings.standaardLidgeld||50)}</p></div>
       <div class="field">
         <label>Toestemming foto *</label>
-        <label style="display:flex; align-items:flex-start; gap:8px; font-weight:400; color:var(--ink); margin:6px 0;"><input type="radio" name="rf-fotoconsent" value="ja" style="width:auto; margin-top:3px;"> Ik geef toestemming om foto's van mij/mijn kind op de website/facebookpagina/instagram van onze chiro te plaatsen.</label>
-        <label style="display:flex; align-items:flex-start; gap:8px; font-weight:400; color:var(--ink); margin:6px 0;"><input type="radio" name="rf-fotoconsent" value="nee" style="width:auto; margin-top:3px;"> Ik geef GEEN toestemming om foto's van mij/mijn kind op de website/facebookpagina/instagram van onze chiro te plaatsen.</label>
+        <label style="display:flex; align-items:flex-start; gap:10px; font-weight:400; color:var(--ink); margin:8px 0;"><input type="radio" name="rf-fotoconsent" value="ja" style="width:22px; height:22px; flex:none; accent-color:var(--campfire); margin-top:1px;"> Ik geef toestemming om foto's van mij/mijn kind op de website/facebookpagina/instagram van onze chiro te plaatsen.</label>
+        <label style="display:flex; align-items:flex-start; gap:10px; font-weight:400; color:var(--ink); margin:8px 0;"><input type="radio" name="rf-fotoconsent" value="nee" style="width:22px; height:22px; flex:none; accent-color:var(--campfire); margin-top:1px;"> Ik geef GEEN toestemming om foto's van mij/mijn kind op de website/facebookpagina/instagram van onze chiro te plaatsen.</label>
       </div>
       <button class="btn btn-primary" onclick="submitInschrijving()">Inschrijven</button>
     </div>
@@ -418,6 +425,7 @@ function renderPaymentOptions(member){
   const bedrag = member.bedrag;
   app.innerHTML = `
     <div class="header"><p>Inschrijving ${escapeHtml(settings.naam||'Chiro')}</p><h1>Bedankt, ${escapeHtml(member.naam.split(' ')[0])}!</h1></div>
+    ${backLinkHtml()}
     <div class="card">
       <p class="muted" style="margin-bottom:16px;">Inschrijving ontvangen. Nog te betalen: <b>${euro(bedrag)}</b>.</p>
       ${!ibanOk ? '<p class="muted">De Chiro heeft nog geen rekeningnummer ingesteld — de leiding neemt contact op over de betaling.</p>' : ''}
