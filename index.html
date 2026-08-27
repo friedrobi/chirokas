@@ -799,11 +799,20 @@ function exportMembersExcel(){
   if(typeof XLSX === 'undefined'){ toast('Excel-bibliotheek niet geladen.'); return; }
   const rows = members.filter(m=>!m.isTest).map(m=>({
     Naam: m.naam,
-    Lidgeld: m.bedrag,
-    'E-mail': m.email||'',
-    Gsm: m.gsm||'',
     Afdeling: m.afdeling||'',
+    Lidgeld: m.bedrag,
     Betaald: m.paidThisYear ? 'Ja' : 'Nee',
+    Geboortedatum: m.geboortedatum||'',
+    Gender: m.gender||'',
+    'Straat + huisnummer': m.straatHuisnummer||'',
+    Postcode: m.postcode||'',
+    Gemeente: m.gemeente||'',
+    'E-mail': m.email||'',
+    'E-mail (2)': m.email2||'',
+    Gsm: m.gsm||'',
+    'Gsm (2)': m.gsm2||'',
+    'Gsm lid': m.gsmLid||'',
+    'Toestemming foto': m.fotoToestemming===true ? 'Ja' : (m.fotoToestemming===false ? 'Nee' : ''),
     Notities: m.notities||''
   }));
   if(rows.length===0){ toast('Geen leden om te exporteren.'); return; }
@@ -925,16 +934,35 @@ async function handleExcelImport(evt){
       const naamKey = findKey(row, [/^naam$/i, /name/i]);
       const bedragKey = findKey(row, [/lidgeld/i, /bedrag/i, /prijs/i, /amount/i]);
       const emailKey = findKey(row, [/e-?mail/i]);
+      const email2Key = findKey(row, [/e-?mail.*2/i]);
       const gsmKey = findKey(row, [/gsm/i, /mobiel/i, /telefoon/i, /tel\.?$/i, /phone/i]);
+      const gsm2Key = findKey(row, [/gsm.*2/i, /mobiel.*2/i]);
+      const gsmLidKey = findKey(row, [/gsm.*lid/i]);
       const afdelingKey = findKey(row, [/afdeling/i, /groep/i, /^tak$/i]);
       const notitiesKey = findKey(row, [/notitie/i, /notes?/i, /opmerking/i]);
+      const geboortedatumKey = findKey(row, [/geboortedatum/i, /geboorte/i, /birth/i]);
+      const genderKey = findKey(row, [/gender/i, /geslacht/i]);
+      const straatKey = findKey(row, [/straat/i, /adres/i]);
+      const postcodeKey = findKey(row, [/postcode/i, /^pc$/i]);
+      const gemeenteKey = findKey(row, [/gemeente/i, /woonplaats/i, /stad/i]);
+      const fotoKey = findKey(row, [/foto/i]);
       const naam = naamKey ? String(row[naamKey]).trim() : '';
       if(!naam){ skipped++; continue; }
       let bedrag = bedragKey ? parseFloat(String(row[bedragKey]).replace(',', '.')) : NaN;
       if(isNaN(bedrag) || bedrag < 0) bedrag = 0;
       const email = emailKey ? String(row[emailKey]).trim() : '';
+      const email2 = email2Key ? String(row[email2Key]).trim() : '';
       const gsm = gsmKey ? String(row[gsmKey]).trim() : '';
+      const gsm2 = gsm2Key ? String(row[gsm2Key]).trim() : '';
+      const gsmLid = gsmLidKey ? String(row[gsmLidKey]).trim() : '';
       const notities = notitiesKey ? String(row[notitiesKey]).trim() : '';
+      const geboortedatum = geboortedatumKey ? String(row[geboortedatumKey]).trim() : '';
+      const gender = genderKey ? String(row[genderKey]).trim() : '';
+      const straatHuisnummer = straatKey ? String(row[straatKey]).trim() : '';
+      const postcode = postcodeKey ? String(row[postcodeKey]).trim() : '';
+      const gemeente = gemeenteKey ? String(row[gemeenteKey]).trim() : '';
+      const fotoRaw = fotoKey ? String(row[fotoKey]).trim().toLowerCase() : '';
+      const fotoToestemming = fotoRaw==='ja' ? true : (fotoRaw==='nee' ? false : undefined);
       const afdelingRaw = afdelingKey ? String(row[afdelingKey]).trim() : '';
       const afdeling = afdelingRaw ? (AFDELINGEN.find(a=>a.toLowerCase()===afdelingRaw.toLowerCase()) || '') : '';
       if(afdelingRaw && !afdeling) onbekendeAfdeling++;
@@ -943,12 +971,21 @@ async function handleExcelImport(evt){
       if(existing >= 0){
         members[existing].bedrag = bedrag || members[existing].bedrag;
         if(email) members[existing].email = email;
+        if(email2) members[existing].email2 = email2;
         if(gsm) members[existing].gsm = gsm;
+        if(gsm2) members[existing].gsm2 = gsm2;
+        if(gsmLid) members[existing].gsmLid = gsmLid;
         if(afdeling) members[existing].afdeling = afdeling;
         if(notities) members[existing].notities = notities;
+        if(geboortedatum) members[existing].geboortedatum = geboortedatum;
+        if(gender) members[existing].gender = gender;
+        if(straatHuisnummer) members[existing].straatHuisnummer = straatHuisnummer;
+        if(postcode) members[existing].postcode = postcode;
+        if(gemeente) members[existing].gemeente = gemeente;
+        if(fotoToestemming !== undefined) members[existing].fotoToestemming = fotoToestemming;
         updated++;
       }else{
-        members.push({ id: Date.now()+added, naam, bedrag, email, gsm, afdeling, notities, paidThisYear:false, isTest: !!settings.testMode });
+        members.push({ id: Date.now()+added, naam, bedrag, email, email2, gsm, gsm2, gsmLid, afdeling, notities, geboortedatum, gender, straatHuisnummer, postcode, gemeente, fotoToestemming, paidThisYear:false, isTest: !!settings.testMode });
         added++;
       }
     }
