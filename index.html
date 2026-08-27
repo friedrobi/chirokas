@@ -1164,7 +1164,7 @@ async function openWhatsapp(i){
     if(!mollieUrl) toast('Mollie-link kon niet aangemaakt worden — bericht gaat wel door met de gratis overschrijving.');
   }
   const text = buildWhatsappText(m, ogm, mollieUrl);
-  window.open(`https://wa.me/${num}?text=${encodeURIComponent(text)}`, '_blank');
+  window.location.href = `https://wa.me/${num}?text=${encodeURIComponent(text)}`;
   setTimeout(()=>{ if(confirm(`WhatsApp geopend voor ${m.naam}. Markeren als verstuurd?`)) markReminderSent(i); }, 800);
 }
 
