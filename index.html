@@ -416,6 +416,9 @@ window.__onAuthChange = handleAuthChange;
 
 function renderLoginScreen(){
   const app = document.getElementById('app');
+  const debugInfo = currentUser
+    ? `ingelogd als: ${currentUser.email || '(geen e-mail)'}${currentUser.isAnonymous ? ' — ANONIEM' : ''} (uid: ${currentUser.uid.slice(0,8)}…)`
+    : 'geen gebruiker gedetecteerd (currentUser is leeg)';
   app.innerHTML = `
     <div class="card" style="max-width:380px; margin:60px auto;">
       <h2 class="display" style="margin-top:0;">Chirokas</h2>
@@ -425,6 +428,7 @@ function renderLoginScreen(){
       <button class="btn btn-primary btn-block" onclick="doLogin()">Inloggen</button>
       <button class="btn btn-ghost btn-block" style="margin-top:8px;" onclick="doResetPassword()">Wachtwoord vergeten?</button>
       <p id="login-error" style="margin-top:10px; color:var(--rust); font-size:13px;"></p>
+      <p class="muted" style="margin-top:18px; font-size:10.5px; opacity:.55;">Debug: ${escapeHtml(debugInfo)} · build ${APP_BUILD}</p>
     </div>
   `;
 }
@@ -532,6 +536,8 @@ function toast(msg){
   clearTimeout(toastTimer);
   toastTimer = setTimeout(()=>t.classList.remove('show'), 2600);
 }
+
+const APP_BUILD = 'debug-2026-08-27a';
 
 /* ---------- State ---------- */
 let activeTab = 'dashboard';
