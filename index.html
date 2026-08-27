@@ -393,6 +393,13 @@ async function fetchMyRole(){
 async function handleAuthChange(user){
   currentUser = user || null;
   if(!currentUser || currentUser.isAnonymous){
+    if(currentUser && currentUser.isAnonymous){
+      // Een anonieme sessie hoort hier nooit thuis — die komt enkel voor op
+      // inschrijven.html. Als die toch in de gedeelde aanmeldstatus opduikt
+      // (bv. een verouderd/gecached tabblad), ruim ze zelf op zodat een
+      // volgende, echte login niet verward geraakt.
+      try{ await window.__auth.signOut(window.__auth.auth); }catch(e){}
+    }
     currentRole = null;
     renderLoginScreen();
     return;
