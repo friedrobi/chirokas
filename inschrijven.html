@@ -26,7 +26,13 @@
     appId: "1:976970110843:web:08a722950449e2b1bb4fde"
   };
 
-  const fbApp = initializeApp(firebaseConfig);
+  // Een eigen, benoemde app-instantie (niet de standaardinstantie) —
+  // hierdoor is de aanmeldstatus van deze pagina volledig gescheiden van
+  // index.html, ook voor Firebase's seingeving tussen tabbladen onderling.
+  // Enkel "inMemoryPersistence" instellen bleek onvoldoende: die voorkwam
+  // wel dat de sessie bewaard bleef, maar niet dat andere tabbladen alsnog
+  // meteen op de hoogte gebracht werden van deze aanmelding.
+  const fbApp = initializeApp(firebaseConfig, 'inschrijven');
   const db = getFirestore(fbApp);
   const auth = getAuth(fbApp);
 
