@@ -197,6 +197,37 @@ vereist een goedgekeurde WhatsApp Business-koppeling bij Meta — een
 zware, formele aanvraagprocedure met (meestal) kosten per bericht, wat
 voor een Chiro niet in verhouding staat tegenover wat het oplevert.
 
+## Kampinschrijvingen met gezinsprijzen
+
+Tabblad "Kamp" laat leden inschrijven voor het kamp aan een prijs die
+afhangt van de gezinsgrootte:
+
+- Koppel broers/zussen via het **"Gezin"-veld** in het ledendetail
+  (klik op een lid in "Leden" of "Kamp") — typ dezelfde naam bij elk
+  kind uit hetzelfde gezin (een suggestielijst verschijnt automatisch
+  op basis van al ingevoerde gezinsnamen).
+- De prijzen zelf stel je in bij **Instellingen > Kampprijzen**:
+  eerste kind, tweede kind, vanaf derde kind, en een apart vast
+  bedrag voor Pagatters (die tellen niet mee in de gezinsteller).
+- Wie van een gezin **het eerst** ingeschreven wordt, krijgt het
+  eerste-kind-tarief; de volgende het tweede-kind-tarief, enzovoort.
+  Die prijs ligt daarna vast — komt er later nog een broer of zus
+  bij, dan verandert de al vastgelegde prijs van de eerdere
+  inschrijvingen niet meer.
+- De betaalflow zelf werkt identiek aan lidgeld: gratis QR-code met
+  een eigen, stabiele gestructureerde mededeling, "markeer als
+  betaald", en herkenning bij het importeren van een
+  rekeninguittreksel (CODA). Boekingen komen in de boekhouding onder
+  categorie "Kampinschrijving" terecht.
+
+**Bewust nog niet gebouwd** — om het behapbaar te houden: een
+publieke inschrijvingspagina voor ouders (zoals `inschrijven.html`
+voor lidgeld) is er nog niet; kampinschrijving gebeurt voorlopig
+enkel via de leiding zelf in de app. Ook WhatsApp/e-mailherinneringen
+en Mollie zijn nog niet gekoppeld aan kampbetalingen — enkel de
+gratis QR-flow. Beide zijn wel op dezelfde manier uit te breiden als
+gewenst.
+
 ## Hosten (gratis)
 
 Kies één van beide — beide zijn gratis en werken met deze bestanden zoals ze zijn:

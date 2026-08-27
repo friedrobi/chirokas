@@ -564,12 +564,14 @@ function render(){
       <button data-tab="dashboard" class="${activeTab==='dashboard'?'active':''}">Overzicht</button>
       <button data-tab="leden" class="${activeTab==='leden'?'active':''}">Leden</button>
       <button data-tab="boekhouding" class="${activeTab==='boekhouding'?'active':''}">Boekhouding</button>
+      <button data-tab="kamp" class="${activeTab==='kamp'?'active':''}">Kamp</button>
       <button data-tab="mailing" class="${activeTab==='mailing'?'active':''}">Herinneringen</button>
       ${isHoofd() ? `<button data-tab="instellingen" class="${activeTab==='instellingen'?'active':''}">Instellingen</button>` : ''}
     </div>
     <div id="section-dashboard" class="section ${activeTab==='dashboard'?'active':''}"></div>
     <div id="section-leden" class="section ${activeTab==='leden'?'active':''}"></div>
     <div id="section-boekhouding" class="section ${activeTab==='boekhouding'?'active':''}"></div>
+    <div id="section-kamp" class="section ${activeTab==='kamp'?'active':''}"></div>
     <div id="section-mailing" class="section ${activeTab==='mailing'?'active':''}"></div>
     ${isHoofd() ? `<div id="section-instellingen" class="section ${activeTab==='instellingen'?'active':''}"></div>` : ''}
     <p class="footnote">Gegevens van Chirokas worden gedeeld tussen alle leiding die deze app opent — iedereen ziet en bewerkt dezelfde ledenlijst en boekhouding.</p>
@@ -578,6 +580,7 @@ function render(){
   renderDashboard();
   renderLeden();
   renderBoekhouding();
+  renderKamp();
   renderMailing();
   if(isHoofd()) renderInstellingen();
 }
@@ -844,6 +847,11 @@ function renderMemberDetail(){
       <div class="field"><label>Lidgeld</label><input id="md-bedrag" type="number" step="0.01" value="${m.bedrag}"></div>
       <div class="field"><label>Afdeling</label><select id="md-afdeling">${afdelingOptions(m.afdeling||'')}</select></div>
     </div>
+    <div class="field"><label>Gezin (koppelt broers/zussen voor kampprijs)</label>
+      <input id="md-gezin" type="text" list="gezin-datalist" value="${escapeHtml(m.gezinsnaam||'')}" placeholder="bv. familienaam">
+      <datalist id="gezin-datalist">${[...new Set(members.filter(x=>x.gezinsnaam).map(x=>x.gezinsnaam))].map(g=>`<option value="${escapeHtml(g)}">`).join('')}</datalist>
+    </div>
+    ${m.kamp && m.kamp.ingeschreven ? `<p class="muted">Kamp: ${m.kamp.betaald?'betaald':'openstaand'} — ${euro(m.kamp.bedrag)}</p>` : ''}
     <div class="row2">
       <div class="field"><label>Geboortedatum</label><input id="md-geboortedatum" type="date" value="${m.geboortedatum||''}"></div>
       <div class="field"><label>Gender</label><input id="md-gender" type="text" value="${escapeHtml(m.gender||'')}"></div>
@@ -885,6 +893,7 @@ async function saveMemberDetail(){
   members[i].naam = naam;
   members[i].bedrag = bedrag;
   members[i].afdeling = document.getElementById('md-afdeling').value;
+  members[i].gezinsnaam = document.getElementById('md-gezin').value.trim();
   members[i].geboortedatum = document.getElementById('md-geboortedatum').value || '';
   members[i].gender = document.getElementById('md-gender').value.trim();
   members[i].straatHuisnummer = document.getElementById('md-straat').value.trim();
@@ -1060,6 +1069,142 @@ async function ensureMemberOgm(i){
   await Promise.all([saveMembers(), saveSettings()]);
   return m.openOgm;
 }
+
+/* ---------- Kamp: gezinsprijzen, inschrijving & betaling ---------- */
+function computeKampPrijs(member){
+  const prijzen = settings.kampPrijzen || { eersteKind:200, tweedeKind:190, vanafDerdeKind:180, pagatters:100 };
+  if(member.afdeling === 'Pagatters') return prijzen.pagatters;
+  const gezin = (member.gezinsnaam||'').trim().toLowerCase();
+  if(!gezin) return prijzen.eersteKind;
+  const alGeregistreerd = members.filter(m=>
+    !m.isTest && m.id!==member.id &&
+    (m.gezinsnaam||'').trim().toLowerCase()===gezin &&
+    m.afdeling!=='Pagatters' &&
+    m.kamp && m.kamp.ingeschreven
+  ).length;
+  const positie = alGeregistreerd + 1;
+  if(positie===1) return prijzen.eersteKind;
+  if(positie===2) return prijzen.tweedeKind;
+  return prijzen.vanafDerdeKind;
+}
+async function registerForKamp(i){
+  const m = members[i];
+  const prijs = computeKampPrijs(m);
+  m.kamp = { ingeschreven:true, bedrag:prijs, betaald:false, openOgm:null };
+  await saveMembers();
+  render();
+  toast(`${m.naam} ingeschreven voor kamp — ${euro(prijs)}.`);
+}
+async function unregisterFromKamp(i){
+  if(!confirm(`Kampinschrijving van ${members[i].naam} ongedaan maken?`)) return;
+  members[i].kamp = { ingeschreven:false, bedrag:0, betaald:false, openOgm:null };
+  await saveMembers();
+  render();
+  toast('Kampinschrijving ongedaan gemaakt.');
+}
+async function ensureKampOgm(i){
+  const m = members[i];
+  if(!m.kamp) m.kamp = { ingeschreven:false, bedrag:0, betaald:false, openOgm:null };
+  if(m.kamp.openOgm && m.kamp.openOgm.raw) return m.kamp.openOgm;
+  const ogm = generateOGM();
+  m.kamp.openOgm = { raw: ogm.raw, formatted: ogm.formatted };
+  settings.nextRef = (settings.nextRef||1) + 1;
+  await Promise.all([saveMembers(), saveSettings()]);
+  return m.kamp.openOgm;
+}
+async function openKampQr(i){
+  const m = members[i];
+  if(!settings.iban || !ibanValid(settings.iban)){ toast('Vul eerst een geldig IBAN in bij Instellingen.'); return; }
+  if(!m.kamp || !m.kamp.ingeschreven){ toast('Dit lid is nog niet ingeschreven voor kamp.'); return; }
+  await ensureKampOgm(i);
+  qrCtx = { kind:'kamp', memberIndex:i, amount:m.kamp.bedrag };
+  document.getElementById('qr-modal').classList.add('open');
+  renderQrModal();
+}
+async function markKampPaid(i, amount, ogmFormatted, ogmRaw){
+  const isTest = !!members[i].isTest;
+  members[i].kamp.betaald = true;
+  members[i].kamp.openOgm = null;
+  await saveMembers();
+  const afdeling = members[i].afdeling || '';
+  ledger.push({ id: Date.now(), datum: todayStr(), omschrijving: `Kampinschrijving ${members[i].naam} (${ogmFormatted})`, categorie:'Kampinschrijving', bedrag: amount, type:'in', afdeling, isTest, ogmRaw: ogmRaw || null, codaKey: ogmRaw || null });
+  await saveLedger();
+  closeQrModal();
+  render();
+  toast(isTest ? 'Testbetaling geregistreerd — telt niet mee in het echte saldo.' : 'Kampbetaling geregistreerd.');
+}
+async function markKampPaidFromCoda(memberIndex, tx){
+  const m = members[memberIndex];
+  m.kamp.betaald = true;
+  m.kamp.openOgm = null;
+  await saveMembers();
+  const ref = tx.ogmRaw ? formatOgmDisplay(tx.ogmRaw) : '';
+  ledger.push({ id: Date.now(), datum: tx.datum, omschrijving: `Kampinschrijving ${m.naam} (rekeninguittreksel${ref?': '+ref:''})`, categorie:'Kampinschrijving', bedrag: tx.bedrag, type:'in', afdeling: m.afdeling||'', isTest: !!m.isTest, ogmRaw: tx.ogmRaw||null, codaKey: computeCodaKey(tx) });
+  await saveLedger();
+}
+
+let kampAfdelingFilter = '';
+function toggleKampAfdelingFilter(){ kampAfdelingFilter = document.getElementById('kamp-afdeling-filter').value; renderKamp(); }
+let kampOnlyIngeschreven = false;
+function toggleKampOnlyIngeschreven(){ kampOnlyIngeschreven = document.getElementById('kamp-only-ingeschreven').checked; renderKamp(); }
+
+function renderKamp(){
+  const el = document.getElementById('section-kamp');
+  const base = isHoofd() ? members : members.filter(m=>(m.afdeling||'')===myAfdeling());
+  let shown = !isHoofd() ? base
+    : !kampAfdelingFilter ? base
+    : base.filter(m=>m.afdeling===kampAfdelingFilter);
+  if(kampOnlyIngeschreven) shown = shown.filter(m=>m.kamp && m.kamp.ingeschreven);
+  const ibanOk = settings.iban && ibanValid(settings.iban);
+
+  const rows = shown.map(m=>{
+    const i = members.indexOf(m);
+    const kamp = m.kamp || {ingeschreven:false, bedrag:0, betaald:false};
+    let statusPill, actions;
+    if(!kamp.ingeschreven){
+      statusPill = `<span class="pill due">Niet ingeschreven</span>`;
+      actions = `<button class="btn btn-primary btn-sm" onclick="registerForKamp(${i})">Inschrijven voor kamp</button>`;
+    } else if(!kamp.betaald){
+      statusPill = `<span class="pill due">Openstaand ${euro(kamp.bedrag)}</span>`;
+      actions = `<button class="btn btn-primary btn-sm" onclick="openKampQr(${i})" ${!ibanOk?'disabled':''}>Betaalverzoek</button><button class="btn btn-ghost btn-sm" onclick="unregisterFromKamp(${i})">Ongedaan maken</button>`;
+    } else {
+      statusPill = `<span class="pill paid">Betaald ${euro(kamp.bedrag)}</span>`;
+      actions = '';
+    }
+    return `
+    <div class="member-card ${kamp.betaald?'paid':(kamp.ingeschreven?'due':'')}">
+      <div onclick="openMemberDetail(${i})" style="cursor:pointer; flex:1;" title="Klik voor details">
+        <div class="member-name">${escapeHtml(m.naam)} ${m.afdeling ? `<span class="cat-tag">${escapeHtml(m.afdeling)}</span>` : ''}</div>
+        <div class="member-sub">${m.gezinsnaam ? 'Gezin: '+escapeHtml(m.gezinsnaam) : 'Geen gezin gekoppeld'}</div>
+      </div>
+      <div class="member-actions">
+        ${m.isTest ? '<span class="pill test">Test</span>' : ''}
+        ${statusPill}
+        ${actions}
+      </div>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="card">
+      <h3 class="card-title">Kampinschrijvingen</h3>
+      <p class="muted">Prijs hangt af van de gezinsgrootte — koppel broers/zussen via het "Gezin"-veld in het ledendetail (klik op een lid). De eerste van een gezin die inschrijft krijgt het eerste-kind-tarief, de volgende het tweede-kind-tarief, enzovoort. Pagatters betalen altijd het vaste Pagatters-tarief. Prijzen instelbaar bij Instellingen &gt; Kampprijzen.</p>
+      ${!ibanOk ? `<p class="badge-warn" style="margin-top:8px;">⚠ Vul eerst een geldig IBAN in bij Instellingen.</p>` : ''}
+      ${isHoofd() ? `
+      <label style="margin-top:10px;">Filter op afdeling</label>
+      <select id="kamp-afdeling-filter" onchange="toggleKampAfdelingFilter()">
+        <option value="" ${!kampAfdelingFilter?'selected':''}>Alle afdelingen</option>
+        ${AFDELINGEN.map(a=>`<option value="${a}" ${kampAfdelingFilter===a?'selected':''}>${a}</option>`).join('')}
+      </select>` : ''}
+      <label style="display:flex; align-items:center; gap:8px; margin-top:12px; font-weight:600; font-size:13px; color:var(--ink-soft);">
+        <input type="checkbox" id="kamp-only-ingeschreven" ${kampOnlyIngeschreven?'checked':''} onchange="toggleKampOnlyIngeschreven()" style="width:auto;">
+        Enkel ingeschreven leden tonen
+      </label>
+    </div>
+    ${shown.length===0 ? `<p class="empty">Geen leden gevonden.</p>` : rows}
+  `;
+}
+
 function formatOgmDisplay(raw){
   if(!raw || raw.length!==12) return raw||'';
   return `+++${raw.slice(0,3)}/${raw.slice(3,7)}/${raw.slice(7,12)}+++`;
@@ -1243,12 +1388,12 @@ let qrCtx = null;
 async function openQr(i){
   const m = members[i];
   await ensureMemberOgm(i);
-  qrCtx = { memberIndex:i, amount:m.bedrag };
+  qrCtx = { kind:'lidgeld', memberIndex:i, amount:m.bedrag };
   document.getElementById('qr-modal').classList.add('open');
   renderQrModal();
 }
 function openTestQr(){
-  qrCtx = { memberIndex:-1, amount:1.00 };
+  qrCtx = { kind:'proef', memberIndex:-1, amount:1.00 };
   document.getElementById('qr-modal').classList.add('open');
   renderQrModal();
 }
@@ -1256,15 +1401,21 @@ function closeQrModal(){ document.getElementById('qr-modal').classList.remove('o
 
 function renderQrModal(){
   const body = document.getElementById('qr-modal-body');
-  const isProef = qrCtx.memberIndex === -1;
+  const isProef = qrCtx.kind === 'proef';
+  const isKamp = qrCtx.kind === 'kamp';
   const m = isProef ? { naam:'Proefbetaling' } : members[qrCtx.memberIndex];
   if(!settings.iban || !ibanValid(settings.iban)){
     body.innerHTML = `<p class="muted">Vul eerst een geldig IBAN-rekeningnummer van de Chiro in bij <b>Instellingen</b> voordat je een betaalverzoek kan maken.</p>`;
     return;
   }
-  const ogm = isProef ? generateOGM() : m.openOgm;
+  const ogm = isProef ? generateOGM() : (isKamp ? m.kamp.openOgm : m.openOgm);
+  const uitleg = isProef
+    ? `<p class="muted">Dit is een proefbetaling om te testen of de QR-code correct werkt met jullie rekening. Ze wordt niet aan een lid gekoppeld en telt niet mee in het echte saldo.</p>`
+    : isKamp
+      ? `<p class="muted">Kampinschrijving voor <b>${escapeHtml(m.naam)}</b> — deze referte blijft dezelfde tot de betaling binnenkomt.</p>`
+      : `<p class="muted">Voor <b>${escapeHtml(m.naam)}</b> — deze referte blijft dezelfde tot de betaling binnenkomt, ook als je later opnieuw een betaalverzoek verstuurt.</p>`;
   body.innerHTML = `
-    ${isProef ? `<p class="muted">Dit is een proefbetaling om te testen of de QR-code correct werkt met jullie rekening. Ze wordt niet aan een lid gekoppeld en telt niet mee in het echte saldo.</p>` : `<p class="muted">Voor <b>${escapeHtml(m.naam)}</b> — deze referte blijft dezelfde tot de betaling binnenkomt, ook als je later opnieuw een betaalverzoek verstuurt.</p>`}
+    ${uitleg}
     <div class="field"><label>Bedrag</label><input id="qr-bedrag" type="number" step="0.01" value="${qrCtx.amount}"></div>
     <button class="btn btn-primary btn-block" onclick="generateQr('${ogm.raw}','${ogm.formatted}')">QR-code genereren</button>
     <div id="qr-output"></div>
@@ -1276,13 +1427,14 @@ async function generateQr(ogmRaw, ogmFormatted){
   if(!amount || amount<=0){ toast('Geef een geldig bedrag in.'); return; }
   const payload = buildEpcPayload(amount, ogmRaw);
   const out = document.getElementById('qr-output');
+  const label = qrCtx.kind==='kamp' ? 'Kampinschrijving' : 'Chiro-lidgeld';
   out.innerHTML = `
     <div class="qr-card">
       <div id="qr-canvas"></div>
       <div class="ogm-code">${ogmFormatted}</div>
       <p class="muted" style="margin-top:6px;">Scan met je bankapp, of gebruik de mededeling hierboven bij een handmatige overschrijving.</p>
     </div>
-    <div class="copy-box" id="copy-text">Chiro-lidgeld — te betalen: ${euro(amount)}
+    <div class="copy-box" id="copy-text">${label} — te betalen: ${euro(amount)}
 Rekeningnummer: ${settings.iban}
 Mededeling: ${ogmFormatted}</div>
     <div class="row2" style="margin-top:10px;">
@@ -1298,7 +1450,7 @@ Mededeling: ${ogmFormatted}</div>
   }catch(e){
     qrHost.innerHTML = '<p class="muted">QR-code kon niet geladen worden — gebruik de mededeling en rekeninggegevens hieronder om manueel over te schrijven.</p>';
   }
-  if(qrCtx.memberIndex === -1){
+  if(qrCtx.kind === 'proef'){
     settings.nextRef = (settings.nextRef||1) + 1;
     await saveSettings();
   }
@@ -1310,6 +1462,7 @@ function copyPaymentText(){
 }
 
 async function markPaid(i, amount, ogmFormatted, ogmRaw){
+  if(qrCtx && qrCtx.kind === 'kamp') return markKampPaid(i, amount, ogmFormatted, ogmRaw);
   const isProef = i === -1;
   const isTest = isProef ? true : !!members[i].isTest;
   let omschrijving, afdeling = '';
@@ -1395,8 +1548,10 @@ function matchCodaTx(tx){
   const key = computeCodaKey(tx);
   if(ledger.some(e=>e.codaKey === key)) return { status:'geboekt' };
   if(tx.type==='in' && tx.ogmRaw){
-    const idx = members.findIndex(m=>!m.paidThisYear && !m.isTest && m.openOgm && m.openOgm.raw === tx.ogmRaw);
-    if(idx>=0) return { status:'match', memberIndex: idx };
+    const lidIdx = members.findIndex(m=>!m.paidThisYear && !m.isTest && m.openOgm && m.openOgm.raw === tx.ogmRaw);
+    if(lidIdx>=0) return { status:'match', matchType:'lidgeld', memberIndex: lidIdx };
+    const kampIdx = members.findIndex(m=>!m.isTest && m.kamp && m.kamp.ingeschreven && !m.kamp.betaald && m.kamp.openOgm && m.kamp.openOgm.raw === tx.ogmRaw);
+    if(kampIdx>=0) return { status:'match', matchType:'kamp', memberIndex: kampIdx };
   }
   return { status:'open' };
 }
@@ -1457,7 +1612,8 @@ async function confirmCodaMatch(txIdx){
   const tx = codaTransactions[txIdx];
   const r = matchCodaTx(tx);
   if(r.status !== 'match') return;
-  await markPaidFromCoda(r.memberIndex, tx);
+  if(r.matchType === 'kamp') await markKampPaidFromCoda(r.memberIndex, tx);
+  else await markPaidFromCoda(r.memberIndex, tx);
   codaTransactions.splice(txIdx,1);
   render();
   toast('Betaling afgepunt.');
@@ -1470,11 +1626,12 @@ async function confirmAllCodaMatches(){
   const toProcess = [];
   codaTransactions.forEach(tx=>{
     const r = matchCodaTx(tx);
-    if(r.status==='match') toProcess.push({tx, memberIndex:r.memberIndex});
+    if(r.status==='match') toProcess.push({tx, memberIndex:r.memberIndex, matchType:r.matchType});
   });
   if(toProcess.length===0) return;
-  for(const {tx, memberIndex} of toProcess){
-    await markPaidFromCoda(memberIndex, tx);
+  for(const {tx, memberIndex, matchType} of toProcess){
+    if(matchType === 'kamp') await markKampPaidFromCoda(memberIndex, tx);
+    else await markPaidFromCoda(memberIndex, tx);
   }
   const processedKeys = new Set(toProcess.map(p=>computeCodaKey(p.tx)));
   codaTransactions = codaTransactions.filter(tx=> !processedKeys.has(computeCodaKey(tx)));
@@ -1492,7 +1649,7 @@ function renderCodaReview(){
     if(r.status==='geboekt'){
       actionHtml = `<span class="pill test">Al geboekt</span>`;
     } else if(r.status==='match'){
-      actionHtml = `<span class="pill paid">${escapeHtml(members[r.memberIndex].naam)}</span> <button class="btn btn-primary btn-sm" onclick="confirmCodaMatch(${idx})">Bevestig</button>`;
+      actionHtml = `<span class="pill paid">${escapeHtml(members[r.memberIndex].naam)} — ${r.matchType==='kamp'?'kamp':'lidgeld'}</span> <button class="btn btn-primary btn-sm" onclick="confirmCodaMatch(${idx})">Bevestig</button>`;
     } else {
       const cats = tx.type==='in' ? INCOME_CATS : EXPENSE_CATS;
       actionHtml = `
@@ -1807,6 +1964,19 @@ function renderInstellingen(){
       </div>
     </div>
     <div class="card">
+      <h3 class="card-title">Kampprijzen</h3>
+      <p class="muted">Prijs hangt af van hoeveel broers/zussen — gekoppeld via het "Gezin"-veld bij een lid — al ingeschreven zijn voor kamp: de eerste van een gezin die inschrijft krijgt het eerste-kind-tarief, de volgende het tweede-kind-tarief, enzovoort. Pagatters betalen altijd het vaste bedrag, ongeacht gezinsgrootte. Eenmaal ingeschreven ligt de prijs vast, ook als er later nog een broer of zus bijkomt.</p>
+      <div class="row2">
+        <div class="field"><label>Eerste kind</label><input id="st-kamp-eerste" type="number" step="0.01" value="${settings.kampPrijzen?.eersteKind ?? 200}"></div>
+        <div class="field"><label>Tweede kind</label><input id="st-kamp-tweede" type="number" step="0.01" value="${settings.kampPrijzen?.tweedeKind ?? 190}"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Vanaf derde kind</label><input id="st-kamp-derde" type="number" step="0.01" value="${settings.kampPrijzen?.vanafDerdeKind ?? 180}"></div>
+        <div class="field"><label>Pagatters (vast bedrag)</label><input id="st-kamp-pagatters" type="number" step="0.01" value="${settings.kampPrijzen?.pagatters ?? 100}"></div>
+      </div>
+      <button class="btn btn-primary btn-block" onclick="saveInstellingen()">Opslaan</button>
+    </div>
+    <div class="card">
       <h3 class="card-title">Online betalen via Mollie (optioneel)</h3>
       <p class="muted">Naast de gratis QR-code kan je ouders ook laten kiezen voor rechtstreeks online betalen via Mollie. Dat kost een kleine vaste vergoeding per betaling (voor Bancontact typisch €0,39 excl. btw). Dit vraagt een gratis Cloudflare Worker als tussenstap — zie MOLLIE-SETUP.md voor de volledige uitleg.</p>
       <div class="toggle-row">
@@ -1946,6 +2116,15 @@ async function saveInstellingen(){
   if(mollieOn) settings.mollieEnabled = mollieOn.checked;
   const mollieUrl = document.getElementById('st-mollieworkerurl');
   if(mollieUrl) settings.mollieWorkerUrl = mollieUrl.value.trim();
+  const kEerste = document.getElementById('st-kamp-eerste');
+  if(kEerste){
+    settings.kampPrijzen = {
+      eersteKind: parseFloat(kEerste.value) || 0,
+      tweedeKind: parseFloat(document.getElementById('st-kamp-tweede').value) || 0,
+      vanafDerdeKind: parseFloat(document.getElementById('st-kamp-derde').value) || 0,
+      pagatters: parseFloat(document.getElementById('st-kamp-pagatters').value) || 0
+    };
+  }
   await saveSettings();
   render();
   toast('Instellingen opgeslagen.');
