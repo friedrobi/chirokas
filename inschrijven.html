@@ -247,18 +247,33 @@ function render(){
     <div class="card">
       <h3 style="margin-top:0;">Gegevens lid</h3>
       <div class="row2">
-        <div class="field"><label>Voornaam</label><input id="rf-voornaam" type="text"></div>
-        <div class="field"><label>Achternaam</label><input id="rf-achternaam" type="text"></div>
+        <div class="field"><label>Voornaam lid *</label><input id="rf-voornaam" type="text"></div>
+        <div class="field"><label>Achternaam lid *</label><input id="rf-achternaam" type="text"></div>
       </div>
-      <div class="field"><label>Geboortedatum</label><input id="rf-geboortedatum" type="date"></div>
+      <div class="field"><label>Gender *</label><input id="rf-gender" type="text"></div>
+      <div class="field"><label>Geboortedatum lid *</label><input id="rf-geboortedatum" type="date"></div>
       <div id="match-banner"></div>
-      <div class="field"><label>Afdeling</label><select id="rf-afdeling">${AFDELINGEN.map(a=>`<option value="${a}">${a}</option>`).join('')}</select></div>
+      <div class="field"><label>Groep (selecteer) *</label><select id="rf-afdeling">${AFDELINGEN.map(a=>`<option value="${a}">${a}</option>`).join('')}</select></div>
+      <div class="field"><label>Straat + huisnummer *</label><input id="rf-straat" type="text"></div>
       <div class="row2">
-        <div class="field"><label>E-mail ouder</label><input id="rf-email" type="email"></div>
-        <div class="field"><label>Gsm ouder</label><input id="rf-gsm" type="tel"></div>
+        <div class="field"><label>Postcode *</label><input id="rf-postcode" type="text"></div>
+        <div class="field"><label>Gemeente *</label><input id="rf-gemeente" type="text"></div>
       </div>
+      <div class="row2">
+        <div class="field"><label>Gsm ouder *</label><input id="rf-gsm" type="tel"></div>
+        <div class="field"><label>Gsm ouder (2)</label><input id="rf-gsm2" type="tel"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Mail ouder *</label><input id="rf-email" type="email"></div>
+        <div class="field"><label>Mail ouder (2)</label><input id="rf-email2" type="email"></div>
+      </div>
+      <div class="field"><label>Gsm lid</label><input id="rf-gsmlid" type="tel"></div>
       <div class="field"><label>Lidgeld</label><p style="margin:0; padding:10px 11px; font-size:15px;">${euro(settings.standaardLidgeld||50)}</p></div>
-      <div class="field"><label>Notities (allergieën, bijzonderheden — optioneel)</label><textarea id="rf-notities" rows="3"></textarea></div>
+      <div class="field">
+        <label>Toestemming foto *</label>
+        <label style="display:flex; align-items:flex-start; gap:8px; font-weight:400; color:var(--ink); margin:6px 0;"><input type="radio" name="rf-fotoconsent" value="ja" style="width:auto; margin-top:3px;"> Ik geef toestemming om foto's van mij/mijn kind op de website/facebookpagina/instagram van onze chiro te plaatsen.</label>
+        <label style="display:flex; align-items:flex-start; gap:8px; font-weight:400; color:var(--ink); margin:6px 0;"><input type="radio" name="rf-fotoconsent" value="nee" style="width:auto; margin-top:3px;"> Ik geef GEEN toestemming om foto's van mij/mijn kind op de website/facebookpagina/instagram van onze chiro te plaatsen.</label>
+      </div>
       <button class="btn btn-primary" onclick="submitInschrijving()">Inschrijven</button>
     </div>
     <p class="muted" style="text-align:center;">Gegevens worden bewaard bij ${settings.naam||'de Chiro'} voor ledenadministratie en boekhouding.</p>
@@ -312,11 +327,22 @@ function declineFuzzyMatch(){
 function prefillFromMember(m){
   document.getElementById('rf-voornaam').value = m.naam.split(' ')[0]||'';
   document.getElementById('rf-achternaam').value = m.naam.split(' ').slice(1).join(' ')||'';
+  if(m.gender) document.getElementById('rf-gender').value = m.gender;
   if(m.geboortedatum) document.getElementById('rf-geboortedatum').value = m.geboortedatum;
   if(m.afdeling) document.getElementById('rf-afdeling').value = m.afdeling;
-  if(m.email) document.getElementById('rf-email').value = m.email;
+  if(m.straatHuisnummer) document.getElementById('rf-straat').value = m.straatHuisnummer;
+  if(m.postcode) document.getElementById('rf-postcode').value = m.postcode;
+  if(m.gemeente) document.getElementById('rf-gemeente').value = m.gemeente;
   if(m.gsm) document.getElementById('rf-gsm').value = m.gsm;
-  if(m.notities) document.getElementById('rf-notities').value = m.notities;
+  if(m.gsm2) document.getElementById('rf-gsm2').value = m.gsm2;
+  if(m.email) document.getElementById('rf-email').value = m.email;
+  if(m.email2) document.getElementById('rf-email2').value = m.email2;
+  if(m.gsmLid) document.getElementById('rf-gsmlid').value = m.gsmLid;
+  if(m.fotoToestemming===true || m.fotoToestemming===false){
+    const val = m.fotoToestemming ? 'ja' : 'nee';
+    const radio = document.querySelector(`input[name="rf-fotoconsent"][value="${val}"]`);
+    if(radio) radio.checked = true;
+  }
 }
 
 async function ensureMemberOgm(m){
@@ -330,28 +356,50 @@ async function ensureMemberOgm(m){
 async function submitInschrijving(){
   const voornaam = document.getElementById('rf-voornaam').value.trim();
   const achternaam = document.getElementById('rf-achternaam').value.trim();
+  const gender = document.getElementById('rf-gender').value.trim();
   const geboortedatum = document.getElementById('rf-geboortedatum').value;
   const afdeling = document.getElementById('rf-afdeling').value;
-  const email = document.getElementById('rf-email').value.trim();
+  const straatHuisnummer = document.getElementById('rf-straat').value.trim();
+  const postcode = document.getElementById('rf-postcode').value.trim();
+  const gemeente = document.getElementById('rf-gemeente').value.trim();
   const gsm = document.getElementById('rf-gsm').value.trim();
+  const gsm2 = document.getElementById('rf-gsm2').value.trim();
+  const email = document.getElementById('rf-email').value.trim();
+  const email2 = document.getElementById('rf-email2').value.trim();
+  const gsmLid = document.getElementById('rf-gsmlid').value.trim();
+  const fotoRadio = document.querySelector('input[name="rf-fotoconsent"]:checked');
   const bedrag = settings.standaardLidgeld || 50;
-  const notities = document.getElementById('rf-notities').value.trim();
   if(!voornaam || !achternaam){ toast('Vul voor- en achternaam in.'); return; }
-  if(!bedrag || bedrag<=0){ toast('Geef een geldig lidgeldbedrag in.'); return; }
+  if(!gender){ toast('Vul gender in.'); return; }
+  if(!geboortedatum){ toast('Vul de geboortedatum in.'); return; }
+  if(!straatHuisnummer){ toast('Vul straat + huisnummer in.'); return; }
+  if(!postcode){ toast('Vul de postcode in.'); return; }
+  if(!gemeente){ toast('Vul de gemeente in.'); return; }
+  if(!gsm){ toast('Vul een gsm-nummer van een ouder in.'); return; }
+  if(!email){ toast('Vul een e-mailadres van een ouder in.'); return; }
+  if(!fotoRadio){ toast('Duid je keuze voor toestemming foto aan.'); return; }
+  const fotoToestemming = fotoRadio.value === 'ja';
   const naam = `${voornaam} ${achternaam}`.trim();
 
   let member;
   if(confirmedMatch){
     member = members.find(m=>m.id===confirmedMatch.id);
     member.naam = naam;
+    member.gender = gender;
     member.geboortedatum = geboortedatum || member.geboortedatum || '';
     member.afdeling = afdeling;
-    member.email = email;
+    member.straatHuisnummer = straatHuisnummer;
+    member.postcode = postcode;
+    member.gemeente = gemeente;
     member.gsm = gsm;
+    member.gsm2 = gsm2;
+    member.email = email;
+    member.email2 = email2;
+    member.gsmLid = gsmLid;
+    member.fotoToestemming = fotoToestemming;
     member.bedrag = bedrag;
-    if(notities) member.notities = notities;
   } else {
-    member = { id: Date.now(), naam, geboortedatum, afdeling, email, gsm, bedrag, notities, paidThisYear:false, isTest:false };
+    member = { id: Date.now(), naam, gender, geboortedatum, afdeling, straatHuisnummer, postcode, gemeente, gsm, gsm2, email, email2, gsmLid, fotoToestemming, bedrag, paidThisYear:false, isTest:false };
     if(dupIgnored && matchResult.fuzzy.length>0){
       member.possibleDuplicateOf = matchResult.fuzzy[0].id;
       member.dupResolved = false;

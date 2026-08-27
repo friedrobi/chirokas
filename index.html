@@ -721,11 +721,28 @@ function renderMemberDetail(){
     </div>
     <div class="row2">
       <div class="field"><label>Geboortedatum</label><input id="md-geboortedatum" type="date" value="${m.geboortedatum||''}"></div>
-      <div class="field"></div>
+      <div class="field"><label>Gender</label><input id="md-gender" type="text" value="${escapeHtml(m.gender||'')}"></div>
+    </div>
+    <div class="field"><label>Straat + huisnummer</label><input id="md-straat" type="text" value="${escapeHtml(m.straatHuisnummer||'')}"></div>
+    <div class="row2">
+      <div class="field"><label>Postcode</label><input id="md-postcode" type="text" value="${escapeHtml(m.postcode||'')}"></div>
+      <div class="field"><label>Gemeente</label><input id="md-gemeente" type="text" value="${escapeHtml(m.gemeente||'')}"></div>
     </div>
     <div class="row2">
-      <div class="field"><label>E-mail</label><input id="md-email" type="email" value="${escapeHtml(m.email||'')}"></div>
-      <div class="field"><label>Gsm</label><input id="md-gsm" type="tel" value="${escapeHtml(m.gsm||'')}"></div>
+      <div class="field"><label>E-mail ouder</label><input id="md-email" type="email" value="${escapeHtml(m.email||'')}"></div>
+      <div class="field"><label>E-mail ouder (2)</label><input id="md-email2" type="email" value="${escapeHtml(m.email2||'')}"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Gsm ouder</label><input id="md-gsm" type="tel" value="${escapeHtml(m.gsm||'')}"></div>
+      <div class="field"><label>Gsm ouder (2)</label><input id="md-gsm2" type="tel" value="${escapeHtml(m.gsm2||'')}"></div>
+    </div>
+    <div class="field"><label>Gsm lid</label><input id="md-gsmlid" type="tel" value="${escapeHtml(m.gsmLid||'')}"></div>
+    <div class="field"><label>Toestemming foto</label>
+      <select id="md-fotoToestemming">
+        <option value="" ${m.fotoToestemming===undefined?'selected':''}>Onbekend</option>
+        <option value="ja" ${m.fotoToestemming===true?'selected':''}>Ja, toestemming gegeven</option>
+        <option value="nee" ${m.fotoToestemming===false?'selected':''}>Nee, geen toestemming</option>
+      </select>
     </div>
     <div class="field"><label>Notities (allergieën, bijzonderheden, contactpersoon...)</label>
       <textarea id="md-notities" rows="4" style="width:100%; padding:9px 10px; border:1px solid var(--rope-line); border-radius:8px; font-family:inherit; font-size:14px;">${escapeHtml(m.notities||'')}</textarea>
@@ -744,8 +761,17 @@ async function saveMemberDetail(){
   members[i].bedrag = bedrag;
   members[i].afdeling = document.getElementById('md-afdeling').value;
   members[i].geboortedatum = document.getElementById('md-geboortedatum').value || '';
+  members[i].gender = document.getElementById('md-gender').value.trim();
+  members[i].straatHuisnummer = document.getElementById('md-straat').value.trim();
+  members[i].postcode = document.getElementById('md-postcode').value.trim();
+  members[i].gemeente = document.getElementById('md-gemeente').value.trim();
   members[i].email = document.getElementById('md-email').value.trim();
+  members[i].email2 = document.getElementById('md-email2').value.trim();
   members[i].gsm = document.getElementById('md-gsm').value.trim();
+  members[i].gsm2 = document.getElementById('md-gsm2').value.trim();
+  members[i].gsmLid = document.getElementById('md-gsmlid').value.trim();
+  const fotoVal = document.getElementById('md-fotoToestemming').value;
+  members[i].fotoToestemming = fotoVal==='' ? undefined : fotoVal==='ja';
   members[i].notities = document.getElementById('md-notities').value.trim();
   await saveMembers();
   closeMemberDetail();
