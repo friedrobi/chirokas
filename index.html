@@ -21,9 +21,12 @@
      Zie README.md voor de volledige stap-voor-stap uitleg.
      ============================================================ -->
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-  import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
-  import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+  import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+  import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+  import {
+    getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut,
+    sendPasswordResetEmail, createUserWithEmailAndPassword, updatePassword
+  } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
   import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js";
 
   const firebaseConfig = {
@@ -40,17 +43,28 @@
   const auth = getAuth(fbApp);
   const storage = getStorage(fbApp);
 
+  window.__firestore = { doc, getDoc, setDoc, deleteDoc, collection, getDocs, db };
+  window.__storage = { storage, storageRef, uploadBytes, getDownloadURL };
+  window.__auth = { auth, signInWithEmailAndPassword, signOut, sendPasswordResetEmail, updatePassword };
+
   onAuthStateChanged(auth, (user) => {
-    if (user) {
-      window.__firestore = { doc, getDoc, setDoc, db };
-      window.__storage = { storage, storageRef, uploadBytes, getDownloadURL };
-      window.__firestoreReady = true;
+    window.__currentUser = user || null;
+    window.__authReady = true;
+    if (window.__onAuthChange) window.__onAuthChange(user);
+  });
+
+  // Maakt een nieuwe inlog aan zonder de huidige sessie (hoofdleiding) te vervangen —
+  // gebeurt via een tijdelijke, losse Firebase-app-instantie.
+  window.__createUserAccount = async function(email, password){
+    const secondaryApp = initializeApp(firebaseConfig, 'secundair-' + Date.now());
+    const secondaryAuth = getAuth(secondaryApp);
+    try{
+      await createUserWithEmailAndPassword(secondaryAuth, email, password);
+      await signOut(secondaryAuth);
+    } finally {
+      await deleteApp(secondaryApp);
     }
-  });
-  signInAnonymously(auth).catch((err) => {
-    console.error('Firebase aanmelden mislukt:', err);
-    window.__firestoreError = true;
-  });
+  };
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(()=>{}));
@@ -312,15 +326,22 @@
 let settings = { naam:'', iban:'', bic:'', rekeninghouder:'', nextRef: 1, standaardLidgeld: 50, inschrijvingOpen: true, mollieEnabled: false, mollieWorkerUrl: '' };
 let members = [];
 let ledger = [];
+let currentUser = null;
+let currentRole = null;
 
-function waitForFirestore(){
+function waitForFirebase(){
   return new Promise((resolve, reject)=>{
-    if(window.__firestoreReady) return resolve();
+    if(window.__firestore && window.__storage && window.__auth) return resolve();
     const iv = setInterval(()=>{
-      if(window.__firestoreReady){ clearInterval(iv); resolve(); }
-      if(window.__firestoreError){ clearInterval(iv); reject(new Error('Firebase-aanmelding mislukt')); }
+      if(window.__firestore && window.__storage && window.__auth){ clearInterval(iv); resolve(); }
     }, 40);
     setTimeout(()=>{ clearInterval(iv); reject(new Error('Firebase reageerde niet op tijd — controleer je firebaseConfig.')); }, 12000);
+  });
+}
+function waitForAuthResolved(){
+  return new Promise((resolve)=>{
+    if(window.__authReady) return resolve();
+    const iv = setInterval(()=>{ if(window.__authReady){ clearInterval(iv); resolve(); } }, 40);
   });
 }
 
@@ -353,6 +374,98 @@ async function saveMembers(){
 async function saveLedger(){
   try{ const { doc, setDoc, db } = window.__firestore; await setDoc(doc(db,'chirokas','ledger'), { list: ledger }); }
   catch(e){ toast('Opslaan mislukt, probeer opnieuw.'); }
+}
+
+/* ---------- Aanmelden & rollen ---------- */
+async function fetchMyRole(){
+  const { doc, getDoc, db } = window.__firestore;
+  try{
+    const d = await getDoc(doc(db, 'chirokas_users', currentUser.email));
+    return d.exists() ? { email: currentUser.email, ...d.data() } : null;
+  }catch(e){
+    return null;
+  }
+}
+async function handleAuthChange(user){
+  currentUser = user || null;
+  if(!currentUser || currentUser.isAnonymous){
+    currentRole = null;
+    renderLoginScreen();
+    return;
+  }
+  currentRole = await fetchMyRole();
+  if(!currentRole){
+    renderNoRoleScreen();
+    return;
+  }
+  await loadAll();
+  render();
+}
+window.__onAuthChange = handleAuthChange;
+
+function renderLoginScreen(){
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="card" style="max-width:380px; margin:60px auto;">
+      <h2 class="display" style="margin-top:0;">Chirokas</h2>
+      <p class="muted">Log in met je Chirokas-account.</p>
+      <div class="field"><label>E-mailadres</label><input id="login-email" type="email" placeholder="naam@voorbeeld.be"></div>
+      <div class="field"><label>Wachtwoord</label><input id="login-wachtwoord" type="password"></div>
+      <button class="btn btn-primary btn-block" onclick="doLogin()">Inloggen</button>
+      <button class="btn btn-ghost btn-block" style="margin-top:8px;" onclick="doResetPassword()">Wachtwoord vergeten?</button>
+      <p id="login-error" style="margin-top:10px; color:var(--rust); font-size:13px;"></p>
+    </div>
+  `;
+}
+function renderNoRoleScreen(){
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="card" style="max-width:420px; margin:60px auto;">
+      <h2 class="display" style="margin-top:0;">Nog geen toegang</h2>
+      <p class="muted">Je bent aangemeld als <b>${escapeHtml(currentUser.email)}</b>, maar er is nog geen rol aan dit account gekoppeld. Vraag de hoofdleiding om je toe te voegen bij Instellingen &gt; Gebruikers.</p>
+      <button class="btn btn-ghost btn-block" onclick="doLogout()">Uitloggen</button>
+    </div>
+  `;
+}
+async function doLogin(){
+  const email = document.getElementById('login-email').value.trim();
+  const wachtwoord = document.getElementById('login-wachtwoord').value;
+  const errEl = document.getElementById('login-error');
+  errEl.textContent = '';
+  if(!email || !wachtwoord){ errEl.textContent = 'Vul e-mail en wachtwoord in.'; return; }
+  try{
+    const { auth, signInWithEmailAndPassword } = window.__auth;
+    await signInWithEmailAndPassword(auth, email, wachtwoord);
+  }catch(e){
+    errEl.textContent = 'Inloggen mislukt — controleer e-mail en wachtwoord.';
+  }
+}
+async function doResetPassword(){
+  const email = document.getElementById('login-email').value.trim();
+  if(!email){ toast('Vul eerst je e-mailadres in.'); return; }
+  try{
+    const { auth, sendPasswordResetEmail } = window.__auth;
+    await sendPasswordResetEmail(auth, email);
+    toast('E-mail met resetlink verstuurd (check ook je spamfolder).');
+  }catch(e){
+    toast('Kon geen resetmail versturen — klopt het e-mailadres?');
+  }
+}
+async function doLogout(){
+  const { auth, signOut } = window.__auth;
+  await signOut(auth);
+}
+async function changeOwnPassword(){
+  const nw = prompt('Nieuw wachtwoord (minstens 6 tekens):');
+  if(!nw) return;
+  if(nw.length < 6){ toast('Wachtwoord moet minstens 6 tekens lang zijn.'); return; }
+  try{
+    const { updatePassword } = window.__auth;
+    await updatePassword(currentUser, nw);
+    toast('Wachtwoord gewijzigd.');
+  }catch(e){
+    toast('Wijzigen mislukt — log opnieuw in en probeer nogmaals.');
+  }
 }
 
 /* ---------- Belgian OGM (gestructureerde mededeling) ---------- */
@@ -413,11 +526,15 @@ function toast(msg){
 let activeTab = 'dashboard';
 
 function setTab(tab){ activeTab = tab; render(); }
+function isHoofd(){ return !!currentRole && currentRole.role === 'hoofdleiding'; }
+function myAfdeling(){ return currentRole ? (currentRole.afdeling || '') : ''; }
 
 /* ---------- Render root ---------- */
 function render(){
   const app = document.getElementById('app');
-  const balance = ledger.filter(e=>!e.isTest).reduce((s,e)=> s + (e.type==='in'? e.bedrag : -e.bedrag), 0);
+  if(!isHoofd() && activeTab === 'instellingen') activeTab = 'dashboard';
+  const relevantLedger = isHoofd() ? ledger : ledger.filter(e=>(e.afdeling||'')===myAfdeling());
+  const balance = relevantLedger.filter(e=>!e.isTest).reduce((s,e)=> s + (e.type==='in'? e.bedrag : -e.bedrag), 0);
   app.innerHTML = `
     <div class="header">
       <div class="header-top">
@@ -427,8 +544,15 @@ function render(){
         </div>
         <div class="header-balance">
           <div class="amt tnum">${euro(balance)}</div>
-          <div class="lbl">huidig saldo</div>
+          <div class="lbl">${isHoofd() ? 'huidig saldo' : 'saldo ' + escapeHtml(myAfdeling())}</div>
         </div>
+      </div>
+      <div style="margin-top:10px; display:flex; align-items:center; justify-content:space-between; gap:8px; position:relative; z-index:1;">
+        <span style="color:#F3EEDC; font-size:12px; opacity:.85;">${escapeHtml(currentRole.naam || currentUser.email)} · ${isHoofd() ? 'Hoofdleiding' : escapeHtml(myAfdeling())}</span>
+        <span>
+          <button onclick="changeOwnPassword()" style="background:none; border:none; color:#F3EEDC; text-decoration:underline; font-size:12px; padding:0; margin-right:12px;">Wachtwoord wijzigen</button>
+          <button onclick="doLogout()" style="background:none; border:none; color:#F3EEDC; text-decoration:underline; font-size:12px; padding:0;">Uitloggen</button>
+        </span>
       </div>
     </div>
     ${settings.testMode ? `<div class="test-banner"><span>🧪 Testmodus actief — nieuwe leden en boekingen worden gemarkeerd als test en tellen niet mee in het echte saldo.</span><button onclick="toggleTestMode()">Zet uit</button></div>` : ''}
@@ -437,13 +561,13 @@ function render(){
       <button data-tab="leden" class="${activeTab==='leden'?'active':''}">Leden</button>
       <button data-tab="boekhouding" class="${activeTab==='boekhouding'?'active':''}">Boekhouding</button>
       <button data-tab="mailing" class="${activeTab==='mailing'?'active':''}">Herinneringen</button>
-      <button data-tab="instellingen" class="${activeTab==='instellingen'?'active':''}">Instellingen</button>
+      ${isHoofd() ? `<button data-tab="instellingen" class="${activeTab==='instellingen'?'active':''}">Instellingen</button>` : ''}
     </div>
     <div id="section-dashboard" class="section ${activeTab==='dashboard'?'active':''}"></div>
     <div id="section-leden" class="section ${activeTab==='leden'?'active':''}"></div>
     <div id="section-boekhouding" class="section ${activeTab==='boekhouding'?'active':''}"></div>
     <div id="section-mailing" class="section ${activeTab==='mailing'?'active':''}"></div>
-    <div id="section-instellingen" class="section ${activeTab==='instellingen'?'active':''}"></div>
+    ${isHoofd() ? `<div id="section-instellingen" class="section ${activeTab==='instellingen'?'active':''}"></div>` : ''}
     <p class="footnote">Gegevens van Chirokas worden gedeeld tussen alle leiding die deze app opent — iedereen ziet en bewerkt dezelfde ledenlijst en boekhouding.</p>
   `;
   app.querySelectorAll('.nav button').forEach(b=> b.onclick = ()=> setTab(b.dataset.tab));
@@ -451,7 +575,7 @@ function render(){
   renderLeden();
   renderBoekhouding();
   renderMailing();
-  renderInstellingen();
+  if(isHoofd()) renderInstellingen();
 }
 
 function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s??''; return d.innerHTML; }
@@ -494,19 +618,21 @@ function drillIntoAfdeling(naam){
 function renderDashboard(){
   const el = document.getElementById('section-dashboard');
   const year = new Date().getFullYear();
-  const real = ledger.filter(e=>!e.isTest);
+  const scopedMembers = isHoofd() ? members : members.filter(m=>(m.afdeling||'')===myAfdeling());
+  const scopedLedger = isHoofd() ? ledger : ledger.filter(e=>(e.afdeling||'')===myAfdeling());
+  const real = scopedLedger.filter(e=>!e.isTest);
   const thisYear = real.filter(e=> e.datum.slice(0,4)===String(year));
   const inc = thisYear.filter(e=>e.type==='in').reduce((s,e)=>s+e.bedrag,0);
   const exp = thisYear.filter(e=>e.type==='out').reduce((s,e)=>s+e.bedrag,0);
-  const openstaand = members.filter(m=>!m.paidThisYear && !m.isTest).length;
+  const openstaand = scopedMembers.filter(m=>!m.paidThisYear && !m.isTest).length;
   const recent = [...real].sort((a,b)=> b.datum.localeCompare(a.datum)).slice(0,6);
 
-  const testEntries = ledger.filter(e=>e.isTest);
-  const testMembers = members.filter(m=>m.isTest);
+  const testEntries = scopedLedger.filter(e=>e.isTest);
+  const testMembers = scopedMembers.filter(m=>m.isTest);
   const testNet = testEntries.reduce((s,e)=> s + (e.type==='in'? e.bedrag : -e.bedrag), 0);
 
   el.innerHTML = `
-    ${(testEntries.length>0 || testMembers.length>0) ? `<div class="test-banner"><span>🧪 ${testMembers.length} testlid/leden en ${testEntries.length} testboeking(en) (samen ${euro(testNet)}) tellen hier bewust niet mee. Te zien in "Boekhouding" en "Leden", op te ruimen bij "Instellingen".</span></div>` : ''}
+    ${(testEntries.length>0 || testMembers.length>0) ? `<div class="test-banner"><span>🧪 ${testMembers.length} testlid/leden en ${testEntries.length} testboeking(en) (samen ${euro(testNet)}) tellen hier bewust niet mee.${isHoofd() ? ' Te zien in \"Boekhouding\" en \"Leden\", op te ruimen bij \"Instellingen\".' : ''}</span></div>` : ''}
     <div class="stat-grid">
       <div class="stat income"><div class="v tnum">${euro(inc)}</div><div class="k">Inkomsten ${year}</div></div>
       <div class="stat expense"><div class="v tnum">${euro(exp)}</div><div class="k">Uitgaven ${year}</div></div>
@@ -515,7 +641,7 @@ function renderDashboard(){
     <div class="card">
       <a class="btn btn-primary btn-block" href="inschrijven.html" target="_blank" rel="noopener">Nieuw lid inschrijven</a>
     </div>
-    ${renderAfdelingBreakdown()}
+    ${isHoofd() ? renderAfdelingBreakdown() : ''}
     <div class="card">
       <h3 class="card-title">Recente bewegingen</h3>
       ${recent.length===0 ? `<p class="empty">Nog geen boekingen. Voeg leden toe of registreer een uitgave in "Boekhouding".</p>` :
@@ -533,9 +659,9 @@ function afdelingOptions(selected){
 }
 
 let ledenAfdelingFilter = '';
-function toggleLedenAfdelingFilter(){ ledenAfdelingFilter = document.getElementById('leden-afdeling-filter').value; renderLeden(); }
 
 function renderDupReview(){
+  if(!isHoofd()) return '';
   const dups = members.filter(m => m.possibleDuplicateOf && !m.dupResolved);
   if(dups.length===0) return '';
   const rows = dups.map(d=>{
@@ -603,39 +729,51 @@ function renderLeden(){
         <div class="field"><label>E-mail ouder (optioneel)</label><input id="nl-email" type="email" placeholder="ouder@voorbeeld.be"></div>
         <div class="field"><label>Gsm ouder (optioneel)</label><input id="nl-gsm" type="tel" placeholder="0470 12 34 56"></div>
       </div>
-      <div class="field"><label>Afdeling</label><select id="nl-afdeling">${afdelingOptions('')}</select></div>
+      <div class="field"><label>Afdeling</label><select id="nl-afdeling" ${isHoofd()?'':'disabled'}>${isHoofd() ? afdelingOptions('') : `<option value="${myAfdeling()}" selected>${escapeHtml(myAfdeling())}</option>`}</select></div>
       <button class="btn btn-primary btn-block" onclick="addMember()">Lid toevoegen</button>
     </div>
+    ${isHoofd() ? `
     <div class="card">
       <h3 class="card-title">Leden importeren uit Excel</h3>
       <p class="muted">Kolommen <b>Naam</b>, <b>Lidgeld</b>, optioneel <b>E-mail</b>, <b>Gsm</b> en <b>Afdeling</b> — volgorde en hoofdletters maken niet uit. Een lid met een naam die al bestaat wordt bijgewerkt in plaats van dubbel toegevoegd.</p>
       <input id="xl-file" type="file" accept=".xlsx,.xls,.csv" style="margin-top:8px;" onchange="handleExcelImport(event)">
       <div id="xl-status" class="muted" style="margin-top:8px;"></div>
-    </div>
+    </div>` : ''}
     <div class="card">
+      <div class="field"><label>Zoek op naam</label><input id="leden-zoek" type="text" placeholder="Typ een naam..." oninput="onLedenSearchInput()" value="${escapeHtml(ledenSearchQuery)}"></div>
+      ${isHoofd() ? `
       <label>Filter op afdeling</label>
       <select id="leden-afdeling-filter" onchange="toggleLedenAfdelingFilter()">
         <option value="" ${!ledenAfdelingFilter?'selected':''}>Alle afdelingen</option>
         <option value="__geen__" ${ledenAfdelingFilter==='__geen__'?'selected':''}>Geen afdeling (op te sporen)</option>
         ${AFDELINGEN.map(a=>`<option value="${a}" ${ledenAfdelingFilter===a?'selected':''}>${a}</option>`).join('')}
-      </select>
+      </select>` : `<p class="muted">Leden van <b>${escapeHtml(myAfdeling())}</b>.</p>`}
       <button class="btn btn-ghost btn-block" style="margin-top:10px;" onclick="exportMembersExcel()">Exporteer ledenlijst naar Excel</button>
     </div>
     <div id="member-list"></div>
   `;
+  refreshMemberList();
+}
+let ledenSearchQuery = '';
+function onLedenSearchInput(){ ledenSearchQuery = document.getElementById('leden-zoek').value; refreshMemberList(); }
+function toggleLedenAfdelingFilter(){ ledenAfdelingFilter = document.getElementById('leden-afdeling-filter').value; refreshMemberList(); }
+function refreshMemberList(){
   const list = document.getElementById('member-list');
-  const shown = !ledenAfdelingFilter ? members
-    : ledenAfdelingFilter==='__geen__' ? members.filter(m=>!m.afdeling)
-    : members.filter(m=>m.afdeling===ledenAfdelingFilter);
-  if(members.length===0){
-    list.innerHTML = `<p class="empty">Nog geen leden toegevoegd.</p>`;
-    return;
+  if(list) list.innerHTML = buildMemberListHtml();
+}
+function buildMemberListHtml(){
+  const base = isHoofd() ? members : members.filter(m=>(m.afdeling||'')===myAfdeling());
+  let shown = !isHoofd() ? base
+    : !ledenAfdelingFilter ? base
+    : ledenAfdelingFilter==='__geen__' ? base.filter(m=>!m.afdeling)
+    : base.filter(m=>m.afdeling===ledenAfdelingFilter);
+  if(ledenSearchQuery.trim()){
+    const q = ledenSearchQuery.trim().toLowerCase();
+    shown = shown.filter(m=>m.naam.toLowerCase().includes(q));
   }
-  if(shown.length===0){
-    list.innerHTML = `<p class="empty">Geen leden in deze afdeling.</p>`;
-    return;
-  }
-  list.innerHTML = shown.map((m)=>{
+  if(base.length===0) return `<p class="empty">Nog geen leden toegevoegd.</p>`;
+  if(shown.length===0) return `<p class="empty">Geen leden gevonden.</p>`;
+  return shown.map((m)=>{
     const i = members.indexOf(m);
     return `
     <div class="member-card ${m.paidThisYear?'paid':'due'}">
@@ -855,9 +993,10 @@ function slug(s){ return (s||'lid').toLowerCase().normalize('NFD').replace(/[\u0
 
 function renderMailing(){
   const el = document.getElementById('section-mailing');
-  const contactable = members.filter(m=>!m.isTest && ((m.email && m.email.trim()) || (m.gsm && m.gsm.trim())));
+  const baseMembers = isHoofd() ? members : members.filter(m=>(m.afdeling||'')===myAfdeling());
+  const contactable = baseMembers.filter(m=>!m.isTest && ((m.email && m.email.trim()) || (m.gsm && m.gsm.trim())));
   const eligible = contactable.filter(m=> !mailingOnlyOpen || !m.paidThisYear);
-  const noContact = members.filter(m=>!m.isTest && !(m.email && m.email.trim()) && !(m.gsm && m.gsm.trim()));
+  const noContact = baseMembers.filter(m=>!m.isTest && !(m.email && m.email.trim()) && !(m.gsm && m.gsm.trim()));
   const ibanOk = settings.iban && ibanValid(settings.iban);
 
   el.innerHTML = `
@@ -1009,7 +1148,8 @@ async function sendMemberEmail(i){
 async function sendAllMails(){
   if(!emailjsReady()){ toast('E-mailservice is nog niet ingesteld — zie README.md.'); return; }
   if(!settings.iban || !ibanValid(settings.iban)){ toast('Vul eerst een geldig IBAN in bij Instellingen.'); return; }
-  const withEmail = members.filter(m=>!m.isTest && m.email && m.email.trim());
+  const baseMembers = isHoofd() ? members : members.filter(m=>(m.afdeling||'')===myAfdeling());
+  const withEmail = baseMembers.filter(m=>!m.isTest && m.email && m.email.trim());
   const eligible = withEmail.filter(m=> !mailingOnlyOpen || !m.paidThisYear);
   if(eligible.length===0){ toast('Geen leden om naar te versturen.'); return; }
   if(!confirm(`Mail versturen naar ${eligible.length} lid/leden?`)) return;
@@ -1369,11 +1509,13 @@ async function uploadAttachment(file, keyHint){
 
 function renderBoekhouding(){
   const el = document.getElementById('section-boekhouding');
-  const sorted = [...ledger].sort((a,b)=> b.datum.localeCompare(a.datum)).filter(e=> !boekhoudingAfdelingFilter || (e.afdeling||'')===boekhoudingAfdelingFilter);
-  const realBalance = ledger.filter(e=>!e.isTest).reduce((s,e)=> s + (e.type==='in'? e.bedrag : -e.bedrag), 0);
-  const testEntries = ledger.filter(e=>e.isTest);
+  const baseLedger = isHoofd() ? ledger : ledger.filter(e=>(e.afdeling||'')===myAfdeling());
+  const sorted = [...baseLedger].sort((a,b)=> b.datum.localeCompare(a.datum)).filter(e=> !boekhoudingAfdelingFilter || (e.afdeling||'')===boekhoudingAfdelingFilter);
+  const realBalance = baseLedger.filter(e=>!e.isTest).reduce((s,e)=> s + (e.type==='in'? e.bedrag : -e.bedrag), 0);
+  const testEntries = baseLedger.filter(e=>e.isTest);
   const testNet = testEntries.reduce((s,e)=> s + (e.type==='in'? e.bedrag : -e.bedrag), 0);
   el.innerHTML = `
+    ${isHoofd() ? `
     <div class="card">
       <h3 class="card-title">Rekeninguittreksel importeren</h3>
       <p class="muted">Vraag bij je bank een <b>CODA-bestand</b> (.coda) van je rekeninguittreksels op — dat is het gestandaardiseerde formaat dat alle Belgische banken aanbieden, en waarin de gestructureerde mededeling herkenbaar staat. Chirokas leest alle inkomsten en uitgaven uit het bestand, stelt automatisch een koppeling voor bij lidgeld van leden die nog moeten betalen, en laat elke andere verrichting boeken als gewone inkomst of uitgave met een categorie naar keuze — telkens pas na jouw bevestiging.</p>
@@ -1381,7 +1523,7 @@ function renderBoekhouding(){
       <div id="coda-status" class="muted" style="margin-top:8px;"></div>
     </div>
     ${renderCodaReview()}
-    ${renderMollieCheck()}
+    ${renderMollieCheck()}` : ''}
     <div class="card">
       <h3 class="card-title">Nieuwe boeking</h3>
       <div class="row2">
@@ -1398,19 +1540,20 @@ function renderBoekhouding(){
         <div class="field"><label>Categorie</label><select id="lg-categorie"></select></div>
         <div class="field"><label>Bedrag</label><input id="lg-bedrag" type="number" step="0.01" placeholder="0.00"></div>
       </div>
-      <div class="field"><label>Afdeling (optioneel)</label><select id="lg-afdeling">${afdelingOptions('')}</select></div>
+      <div class="field"><label>Afdeling ${isHoofd()?'(optioneel)':''}</label><select id="lg-afdeling" ${isHoofd()?'':'disabled'}>${isHoofd() ? afdelingOptions('') : `<option value="${myAfdeling()}" selected>${escapeHtml(myAfdeling())}</option>`}</select></div>
       <div class="field"><label>Bijlage — foto of PDF (optioneel)</label><input id="lg-bijlage" type="file" accept="image/*,.pdf"></div>
       <button class="btn btn-primary btn-block" onclick="addLedgerEntry()">Boeking toevoegen</button>
     </div>
     <div class="card">
-      <h3 class="card-title">Alle boekingen</h3>
-      <p class="muted" style="margin-bottom:10px;">Echt saldo (telt mee in Overzicht): <b class="tnum" style="color:var(--ink);">${euro(realBalance)}</b>${testEntries.length>0 ? ` · <span style="color:#8A6D1D;">waarvan ${euro(testNet)} in ${testEntries.length} testboeking(en) hieronder niet meegerekend</span>` : ''}</p>
+      <h3 class="card-title">${isHoofd() ? 'Alle boekingen' : 'Boekingen van ' + escapeHtml(myAfdeling())}</h3>
+      <p class="muted" style="margin-bottom:10px;">${isHoofd() ? 'Echt saldo (telt mee in Overzicht)' : 'Saldo van je afdeling'}: <b class="tnum" style="color:var(--ink);">${euro(realBalance)}</b>${testEntries.length>0 ? ` · <span style="color:#8A6D1D;">waarvan ${euro(testNet)} in ${testEntries.length} testboeking(en) hieronder niet meegerekend</span>` : ''}</p>
+      ${isHoofd() ? `
       <div class="field" style="max-width:280px;"><label>Filter op afdeling (enkel de lijst hieronder)</label>
         <select id="boekhouding-afdeling-filter" onchange="toggleBoekhoudingAfdelingFilter()">
           <option value="" ${!boekhoudingAfdelingFilter?'selected':''}>Alle afdelingen</option>
           ${AFDELINGEN.map(a=>`<option value="${a}" ${boekhoudingAfdelingFilter===a?'selected':''}>${a}</option>`).join('')}
         </select>
-      </div>
+      </div>` : ''}
       ${sorted.length===0 ? `<p class="empty">${boekhoudingAfdelingFilter ? 'Geen boekingen voor deze afdeling.' : 'Nog geen boekingen.'}</p>` :
         `<div class="table-scroll"><table><thead><tr><th>Datum</th><th>Omschrijving</th><th>Categorie</th><th>Afdeling</th><th style="text-align:right;">Bedrag</th><th>Bijlage</th><th></th></tr></thead><tbody>
         ${sorted.map(e=>`<tr><td class="tnum" onclick="openLedgerDetail(${e.id})" style="cursor:pointer;" title="Klik voor details">${e.datum}</td><td onclick="openLedgerDetail(${e.id})" style="cursor:pointer;" title="Klik voor details">${escapeHtml(e.omschrijving)} ${e.isTest?'<span class="pill test">Test</span>':''}</td><td><span class="cat-tag">${escapeHtml(e.categorie)}</span></td><td>${e.afdeling ? `<span class="cat-tag">${escapeHtml(e.afdeling)}</span>` : ''}</td><td style="text-align:right;" class="tnum ${e.type==='in'?'amt-in':'amt-out'}">${e.type==='in'?'+':'-'}${euro(e.bedrag)}</td><td>${e.bijlage ? '📎' : ''}</td><td><button class="del-x" onclick="removeLedgerEntry(${e.id})">✕</button></td></tr>`).join('')}
@@ -1622,12 +1765,90 @@ function renderInstellingen(){
       ${(members.some(m=>m.isTest) || ledger.some(e=>e.isTest)) ? `<button class="btn btn-ghost btn-block" style="margin-top:10px;" onclick="clearTestData()">Verwijder alleen testgegevens</button>` : ''}
     </div>
     <div class="card">
+      <h3 class="card-title">Gebruikers</h3>
+      <p class="muted">Beheer wie kan inloggen en met welke rol. <b>Hoofdleiding</b> ziet en beheert alles. <b>Afdelingsleiding</b> ziet enkel leden, boekingen en herinneringen van hun eigen afdeling, en heeft geen toegang tot Instellingen.</p>
+      <div id="gebruikers-list" class="muted" style="margin:10px 0;">Laden…</div>
+      <div class="row2">
+        <div class="field"><label>Naam</label><input id="gb-naam" type="text" placeholder="Voornaam Achternaam"></div>
+        <div class="field"><label>E-mail (dit wordt de login)</label><input id="gb-email" type="email" placeholder="naam@voorbeeld.be"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Rol</label>
+          <select id="gb-rol" onchange="toggleGbAfdelingField()">
+            <option value="hoofdleiding">Hoofdleiding</option>
+            <option value="afdeling">Afdelingsleiding</option>
+          </select>
+        </div>
+        <div class="field" id="gb-afdeling-field" style="display:none;"><label>Afdeling</label><select id="gb-afdeling">${afdelingOptions('')}</select></div>
+      </div>
+      <button class="btn btn-primary btn-block" onclick="addGebruiker()">Gebruiker toevoegen</button>
+      <p class="muted" style="margin-top:8px;">Er wordt een tijdelijk wachtwoord gegenereerd dat je zelf doorgeeft — de persoon kan dat achteraf zelf wijzigen na het inloggen.</p>
+    </div>
+    <div class="card">
       <h3 class="card-title">Gegevens wissen</h3>
       <p class="muted">Verwijdert alle leden en boekingen voor iedereen die deze app gebruikt. Dit kan niet ongedaan gemaakt worden.</p>
       <button class="btn btn-danger" onclick="resetAll()">Alles wissen</button>
     </div>
   `;
   drawInschrijfQr();
+  loadGebruikersList();
+}
+function toggleGbAfdelingField(){
+  document.getElementById('gb-afdeling-field').style.display = document.getElementById('gb-rol').value==='afdeling' ? '' : 'none';
+}
+async function loadGebruikersList(){
+  const el = document.getElementById('gebruikers-list');
+  if(!el) return;
+  try{
+    const { collection, getDocs, db } = window.__firestore;
+    const snap = await getDocs(collection(db, 'chirokas_users'));
+    if(snap.empty){ el.innerHTML = 'Nog geen gebruikers toegevoegd.'; return; }
+    const rows = [];
+    snap.forEach(d=>{
+      const u = d.data();
+      rows.push(`<div class="member-card" style="border-style:dashed;"><div><div class="member-name">${escapeHtml(u.naam||u.email)}</div><div class="member-sub">${escapeHtml(u.email)} · ${u.role==='hoofdleiding'?'Hoofdleiding':'Afdelingsleiding — '+escapeHtml(u.afdeling||'')}</div></div><div class="member-actions"><button class="del-x" onclick="removeGebruiker('${u.email}')" title="Roltoewijzing verwijderen">✕</button></div></div>`);
+    });
+    el.innerHTML = rows.join('');
+  }catch(e){
+    el.innerHTML = 'Kon gebruikerslijst niet laden.';
+  }
+}
+async function addGebruiker(){
+  const naam = document.getElementById('gb-naam').value.trim();
+  const email = document.getElementById('gb-email').value.trim().toLowerCase();
+  const role = document.getElementById('gb-rol').value;
+  const afdeling = role==='afdeling' ? document.getElementById('gb-afdeling').value : '';
+  if(!naam || !email){ toast('Vul naam en e-mail in.'); return; }
+  if(role==='afdeling' && !afdeling){ toast('Kies een afdeling.'); return; }
+  const tijdelijkWachtwoord = Math.random().toString(36).slice(-6) + Math.floor(Math.random()*90+10);
+  try{
+    await window.__createUserAccount(email, tijdelijkWachtwoord);
+  }catch(e){
+    toast('Kon geen inlog aanmaken — bestaat dit e-mailadres al?');
+    return;
+  }
+  try{
+    const { doc, setDoc, db } = window.__firestore;
+    await setDoc(doc(db, 'chirokas_users', email), { email, naam, role, afdeling });
+  }catch(e){
+    toast('Inlog aangemaakt, maar rol toewijzen is mislukt — probeer opnieuw.');
+    return;
+  }
+  alert(`Account aangemaakt voor ${naam}.\n\nE-mail: ${email}\nTijdelijk wachtwoord: ${tijdelijkWachtwoord}\n\nGeef dit door — de persoon kan het wachtwoord zelf wijzigen na het inloggen.`);
+  document.getElementById('gb-naam').value = '';
+  document.getElementById('gb-email').value = '';
+  loadGebruikersList();
+}
+async function removeGebruiker(email){
+  if(!confirm(`Roltoewijzing voor ${email} verwijderen? De inlog zelf blijft bestaan (te verwijderen via Firebase Authentication in de console) maar heeft geen toegang meer.`)) return;
+  try{
+    const { doc, deleteDoc, db } = window.__firestore;
+    await deleteDoc(doc(db, 'chirokas_users', email));
+    toast('Roltoewijzing verwijderd.');
+    loadGebruikersList();
+  }catch(e){
+    toast('Verwijderen mislukt.');
+  }
 }
 function inschrijfLinkUrl(){
   return location.origin + location.pathname.replace(/[^/]*$/, '') + 'inschrijven.html';
@@ -1680,9 +1901,9 @@ async function clearTestData(){
 /* ---------- Init ---------- */
 (async function init(){
   try{
-    await waitForFirestore();
-    await loadAll();
-    render();
+    await waitForFirebase();
+    await waitForAuthResolved();
+    await handleAuthChange(window.__currentUser);
   }catch(e){
     document.getElementById('app').innerHTML = `<div class="loading">Kon geen verbinding maken met de database.<br>Controleer of firebaseConfig in index.html correct is ingevuld.<br><small>${escapeHtml(e.message||'')}</small></div>`;
   }
