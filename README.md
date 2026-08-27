@@ -40,8 +40,9 @@ Firebase) in plaats van op de tijdelijke opslag van een Claude-artifact.
      en een wachtwoord op.
    - **Firestore Database > Data > Start collection**: naam
      `chirokas_users`. Document-ID: exact je e-mailadres (zelfde als
-     hierboven). Velden: `email` (string, je e-mailadres), `naam`
-     (string, jouw naam), `role` (string, exact `hoofdleiding`),
+     hierboven). Velden: `email` (string, je eigen e-mailadres), `naam`
+     (string, je eigen voor- en achternaam — bv. "Jan Peeters", niet
+     letterlijk het woord "naam"), `role` (string, exact `hoofdleiding`),
      `afdeling` (string, leeg laten).
    Vanaf dan kan je verder alle andere leiding toevoegen via
    Instellingen > Gebruikers in de app zelf — deze stap is dus echt
