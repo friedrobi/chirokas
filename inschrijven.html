@@ -240,7 +240,18 @@ let dupIgnored = false;    // user said "nee, nieuw lid" on a fuzzy suggestion
 
 function fromApp(){ return new URLSearchParams(location.search).get('van') === 'app'; }
 function backLinkHtml(){
-  return fromApp() ? `<p style="text-align:center; margin:-8px 0 16px;"><a href="index.html" style="color:var(--forest-dark); font-weight:600; font-size:13px; text-decoration:none;">← Terug naar Chirokas</a></p>` : '';
+  return fromApp() ? `<p style="text-align:center; margin:-8px 0 16px;"><a href="index.html" onclick="return terugNaarChirokas(event)" style="color:var(--forest-dark); font-weight:600; font-size:13px; text-decoration:none;">← Terug naar Chirokas</a></p>` : '';
+}
+function terugNaarChirokas(evt){
+  evt.preventDefault();
+  // Dit tabblad werd geopend vanuit een al ingelogd Chirokas-tabblad — probeer
+  // dit tabblad gewoon te sluiten zodat je meteen weer op dat ingelogde
+  // tabblad terechtkomt, in plaats van hier opnieuw te moeten aanmelden.
+  // Sommige browsers laten scripts een tabblad niet sluiten; in dat geval
+  // valt dit terug op gewoon doornavigeren naar index.html.
+  window.close();
+  setTimeout(()=>{ window.location.href = 'index.html'; }, 300);
+  return false;
 }
 
 function render(){
