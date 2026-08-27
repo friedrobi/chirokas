@@ -1075,10 +1075,14 @@ async function downloadMemberQr(i){
   document.body.removeChild(hidden);
 }
 
-function buildMemberMailContent(m, ogm){
+function buildMemberMailContent(m, ogm, mollieUrl){
   const chiroNaam = settings.naam || 'de Chiro';
   const subject = `Lidgeld ${chiroNaam} — ${m.naam}`;
-  const body = `Beste,\n\nGraag ontvangen we het lidgeld voor ${m.naam}.\n\nBedrag: ${euro(m.bedrag)}\nRekeningnummer: ${settings.iban}\nMededeling: ${ogm.formatted}\n\nJe kan overschrijven met bovenstaande gegevens, of de QR-code in de app scannen met je bankapp voor een automatisch ingevulde overschrijving.\n\nAlvast bedankt!\n${chiroNaam}`;
+  let body = `Beste,\n\nGraag ontvangen we het lidgeld voor ${m.naam}.\n\nBedrag: ${euro(m.bedrag)}\nRekeningnummer: ${settings.iban}\nMededeling: ${ogm.formatted}\n\nJe kan overschrijven met bovenstaande gegevens, of de QR-code in de app scannen met je bankapp voor een automatisch ingevulde overschrijving.`;
+  if(mollieUrl){
+    body += `\n\nLiever meteen online betalen (Bancontact/kaart, kleine kost)? ${mollieUrl}`;
+  }
+  body += `\n\nAlvast bedankt!\n${chiroNaam}`;
   return { subject, body };
 }
 
@@ -1087,7 +1091,13 @@ async function openMailDraft(i){
   if(!settings.iban || !ibanValid(settings.iban)){ toast('Vul eerst een geldig IBAN in bij Instellingen.'); return; }
   if(!m.email){ toast('Dit lid heeft geen e-mailadres.'); return; }
   const ogm = await ensureMemberOgm(i);
-  const { subject, body } = buildMemberMailContent(m, ogm);
+  let mollieUrl = null;
+  if(settings.mollieEnabled && settings.mollieWorkerUrl){
+    toast('Mollie-link aanmaken…');
+    mollieUrl = await ensureMollieCheckoutUrl(m);
+    if(!mollieUrl) toast('Mollie-link kon niet aangemaakt worden — mail gaat wel door met de gratis overschrijving.');
+  }
+  const { subject, body } = buildMemberMailContent(m, ogm, mollieUrl);
   const mailUrl = `mailto:${m.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   window.location.href = mailUrl;
   setTimeout(()=>{ if(confirm(`Mail geopend voor ${m.naam}. Markeren als verstuurd?`)) markReminderSent(i); }, 800);
@@ -1107,9 +1117,38 @@ function formatWhatsappNumber(raw){
   else if(digits.startsWith('0')) digits = '32' + digits.slice(1);
   return digits.length >= 8 ? digits : null;
 }
-function buildWhatsappText(m, ogm){
+function buildWhatsappText(m, ogm, mollieUrl){
   const chiroNaam = settings.naam || 'de Chiro';
-  return `Hallo! Graag ontvangen we het lidgeld voor ${m.naam} bij ${chiroNaam}.\n\nBedrag: ${euro(m.bedrag)}\nRekeningnummer: ${settings.iban}\nMededeling: ${ogm.formatted}\n\nAlvast bedankt!`;
+  let text = `Hallo! Graag ontvangen we het lidgeld voor ${m.naam} bij ${chiroNaam}.\n\nBedrag: ${euro(m.bedrag)}\nRekeningnummer: ${settings.iban}\nMededeling: ${ogm.formatted}`;
+  if(mollieUrl){
+    text += `\n\nLiever meteen online betalen (Bancontact/kaart, kleine kost)? ${mollieUrl}`;
+  }
+  text += `\n\nAlvast bedankt!`;
+  return text;
+}
+async function ensureMollieCheckoutUrl(m){
+  if(!settings.mollieEnabled || !settings.mollieWorkerUrl) return null;
+  try{
+    const redirectUrl = `${inschrijfLinkUrl()}?molliereturn=1&memberId=${m.id}`;
+    const res = await fetch(`${settings.mollieWorkerUrl.replace(/\/$/,'')}/create-payment`, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        amount: m.bedrag.toFixed(2),
+        description: `Lidgeld ${settings.naam||'Chiro'} — ${m.naam}`,
+        redirectUrl,
+        metadata: { memberId: m.id }
+      })
+    });
+    if(!res.ok) throw new Error('mollie create-payment mislukt');
+    const data = await res.json();
+    m.mollieId = data.id;
+    m.molliePaymentStatus = 'pending';
+    await saveMembers();
+    return data.checkoutUrl;
+  }catch(e){
+    return null;
+  }
 }
 async function openWhatsapp(i){
   const m = members[i];
@@ -1118,7 +1157,13 @@ async function openWhatsapp(i){
   const num = formatWhatsappNumber(m.gsm);
   if(!num){ toast('Kon geen geldig nummer maken van dit gsm-nummer.'); return; }
   const ogm = await ensureMemberOgm(i);
-  const text = buildWhatsappText(m, ogm);
+  let mollieUrl = null;
+  if(settings.mollieEnabled && settings.mollieWorkerUrl){
+    toast('Mollie-link aanmaken…');
+    mollieUrl = await ensureMollieCheckoutUrl(m);
+    if(!mollieUrl) toast('Mollie-link kon niet aangemaakt worden — bericht gaat wel door met de gratis overschrijving.');
+  }
+  const text = buildWhatsappText(m, ogm, mollieUrl);
   window.open(`https://wa.me/${num}?text=${encodeURIComponent(text)}`, '_blank');
   setTimeout(()=>{ if(confirm(`WhatsApp geopend voor ${m.naam}. Markeren als verstuurd?`)) markReminderSent(i); }, 800);
 }
@@ -1133,7 +1178,11 @@ async function sendMemberEmail(i){
   if(!m.email){ toast('Dit lid heeft geen e-mailadres.'); return; }
   if(!emailjsReady()){ toast('E-mailservice is nog niet ingesteld — zie README.md.'); return; }
   const ogm = await ensureMemberOgm(i);
-  const { subject, body } = buildMemberMailContent(m, ogm);
+  let mollieUrl = null;
+  if(settings.mollieEnabled && settings.mollieWorkerUrl){
+    mollieUrl = await ensureMollieCheckoutUrl(m);
+  }
+  const { subject, body } = buildMemberMailContent(m, ogm, mollieUrl);
   try{
     await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, { to_email: m.email, to_name: m.naam, subject, message: body });
     members[i].reminderSentAt = new Date().toISOString();
@@ -1158,7 +1207,11 @@ async function sendAllMails(){
     const i = members.indexOf(m);
     try{
       const ogm = await ensureMemberOgm(i);
-      const { subject, body } = buildMemberMailContent(members[i], ogm);
+      let mollieUrl = null;
+      if(settings.mollieEnabled && settings.mollieWorkerUrl){
+        mollieUrl = await ensureMollieCheckoutUrl(members[i]);
+      }
+      const { subject, body } = buildMemberMailContent(members[i], ogm, mollieUrl);
       await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, { to_email: members[i].email, to_name: members[i].naam, subject, message: body });
       members[i].reminderSentAt = new Date().toISOString();
       sent++;
