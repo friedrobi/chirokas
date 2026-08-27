@@ -272,6 +272,13 @@ function render(){
       <div class="field"><label>Geboortedatum lid *</label><input id="rf-geboortedatum" type="date"></div>
       <div id="match-banner"></div>
       <div class="field"><label>Groep (selecteer) *</label><select id="rf-afdeling">${AFDELINGEN.map(a=>`<option value="${a}">${a}</option>`).join('')}</select></div>
+      <div class="field" style="position:relative;">
+        <label>Gezin (om broers/zussen te koppelen voor de kampprijs, optioneel)</label>
+        <input id="rf-gezin" type="text" autocomplete="off" placeholder="bv. familienaam"
+          oninput="renderGezinSuggesties()" onfocus="renderGezinSuggesties()"
+          onblur="setTimeout(()=>{ const h=document.getElementById('gezin-suggesties'); if(h) h.innerHTML=''; }, 150)">
+        <div id="gezin-suggesties"></div>
+      </div>
       <div class="field"><label>Straat + huisnummer *</label><input id="rf-straat" type="text"></div>
       <div class="row2">
         <div class="field"><label>Postcode *</label><input id="rf-postcode" type="text"></div>
@@ -348,6 +355,7 @@ function prefillFromMember(m){
   if(m.gender) document.getElementById('rf-gender').value = m.gender;
   if(m.geboortedatum) document.getElementById('rf-geboortedatum').value = m.geboortedatum;
   if(m.afdeling) document.getElementById('rf-afdeling').value = m.afdeling;
+  if(m.gezinsnaam) document.getElementById('rf-gezin').value = m.gezinsnaam;
   if(m.straatHuisnummer) document.getElementById('rf-straat').value = m.straatHuisnummer;
   if(m.postcode) document.getElementById('rf-postcode').value = m.postcode;
   if(m.gemeente) document.getElementById('rf-gemeente').value = m.gemeente;
@@ -361,6 +369,27 @@ function prefillFromMember(m){
     const radio = document.querySelector(`input[name="rf-fotoconsent"][value="${val}"]`);
     if(radio) radio.checked = true;
   }
+}
+
+function renderGezinSuggesties(){
+  const input = document.getElementById('rf-gezin');
+  const host = document.getElementById('gezin-suggesties');
+  if(!input || !host) return;
+  const q = input.value.trim().toLowerCase();
+  const alleGezinnen = [...new Set(members.filter(x=>x.gezinsnaam).map(x=>x.gezinsnaam))];
+  const matches = q ? alleGezinnen.filter(g=>g.toLowerCase().includes(q) && g.toLowerCase()!==q) : alleGezinnen;
+  if(matches.length===0){ host.innerHTML=''; return; }
+  host.innerHTML = `
+    <div style="position:absolute; z-index:5; left:0; right:0; background:#fff; border:1px solid var(--rope-line); border-radius:8px; margin-top:2px; box-shadow:var(--shadow); max-height:160px; overflow-y:auto;">
+      ${matches.slice(0,8).map(g=>`<div style="padding:8px 10px; cursor:pointer; font-size:14px;" onmousedown="selectGezin('${g.replace(/'/g,"\\'")}')">${escapeHtml(g)}</div>`).join('')}
+    </div>
+  `;
+}
+function selectGezin(naam){
+  const input = document.getElementById('rf-gezin');
+  if(input) input.value = naam;
+  const host = document.getElementById('gezin-suggesties');
+  if(host) host.innerHTML = '';
 }
 
 async function ensureMemberOgm(m){
@@ -377,6 +406,7 @@ async function submitInschrijving(){
   const gender = document.getElementById('rf-gender').value.trim();
   const geboortedatum = document.getElementById('rf-geboortedatum').value;
   const afdeling = document.getElementById('rf-afdeling').value;
+  const gezinsnaam = document.getElementById('rf-gezin').value.trim();
   const straatHuisnummer = document.getElementById('rf-straat').value.trim();
   const postcode = document.getElementById('rf-postcode').value.trim();
   const gemeente = document.getElementById('rf-gemeente').value.trim();
@@ -406,6 +436,7 @@ async function submitInschrijving(){
     member.gender = gender;
     member.geboortedatum = geboortedatum || member.geboortedatum || '';
     member.afdeling = afdeling;
+    member.gezinsnaam = gezinsnaam;
     member.straatHuisnummer = straatHuisnummer;
     member.postcode = postcode;
     member.gemeente = gemeente;
@@ -417,7 +448,7 @@ async function submitInschrijving(){
     member.fotoToestemming = fotoToestemming;
     member.bedrag = bedrag;
   } else {
-    member = { id: Date.now(), naam, gender, geboortedatum, afdeling, straatHuisnummer, postcode, gemeente, gsm, gsm2, email, email2, gsmLid, fotoToestemming, bedrag, paidThisYear:false, isTest:false };
+    member = { id: Date.now(), naam, gender, geboortedatum, afdeling, gezinsnaam, straatHuisnummer, postcode, gemeente, gsm, gsm2, email, email2, gsmLid, fotoToestemming, bedrag, paidThisYear:false, isTest:false };
     if(dupIgnored && matchResult.fuzzy.length>0){
       member.possibleDuplicateOf = matchResult.fuzzy[0].id;
       member.dupResolved = false;
