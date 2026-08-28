@@ -1842,7 +1842,9 @@ function renderBoekhouding(){
   const sorted = [...baseLedger].sort((a,b)=> b.datum.localeCompare(a.datum))
     .filter(e=> !boekhoudingAfdelingFilter || (e.afdeling||'')===boekhoudingAfdelingFilter)
     .filter(e=> !boekhoudingWerkingsjaarFilter || werkingsjaarVan(e.datum)===parseInt(boekhoudingWerkingsjaarFilter,10));
+  const filterActief = !!(boekhoudingAfdelingFilter || boekhoudingWerkingsjaarFilter);
   const realBalance = baseLedger.filter(e=>!e.isTest).reduce((s,e)=> s + (e.type==='in'? e.bedrag : -e.bedrag), 0);
+  const filteredBalance = sorted.filter(e=>!e.isTest).reduce((s,e)=> s + (e.type==='in'? e.bedrag : -e.bedrag), 0);
   const testEntries = baseLedger.filter(e=>e.isTest);
   const testNet = testEntries.reduce((s,e)=> s + (e.type==='in'? e.bedrag : -e.bedrag), 0);
   el.innerHTML = `
@@ -1877,7 +1879,7 @@ function renderBoekhouding(){
     </div>
     <div class="card">
       <h3 class="card-title">${isHoofd() ? 'Alle boekingen' : 'Boekingen van ' + escapeHtml(myAfdeling())}</h3>
-      <p class="muted" style="margin-bottom:10px;">${isHoofd() ? 'Echt saldo (telt mee in Overzicht)' : 'Saldo van je afdeling'}: <b class="tnum" style="color:var(--ink);">${euro(realBalance)}</b>${testEntries.length>0 ? ` · <span style="color:#8A6D1D;">waarvan ${euro(testNet)} in ${testEntries.length} testboeking(en) hieronder niet meegerekend</span>` : ''}</p>
+      <p class="muted" style="margin-bottom:10px;">${filterActief ? 'Saldo voor deze selectie' : (isHoofd() ? 'Echt saldo (telt mee in Overzicht)' : 'Saldo van je afdeling')}: <b class="tnum" style="color:var(--ink);">${euro(filterActief ? filteredBalance : realBalance)}</b>${testEntries.length>0 ? ` · <span style="color:#8A6D1D;">waarvan ${euro(testNet)} in ${testEntries.length} testboeking(en) hieronder niet meegerekend</span>` : ''}${filterActief ? ` · <span class="muted">totaal ${isHoofd()?'van de hele Chiro':'van je afdeling'}: ${euro(realBalance)}</span>` : ''}</p>
       <div class="field" style="max-width:280px;"><label>Filter op werkingsjaar (enkel de lijst hieronder)</label>
         <select id="boekhouding-werkingsjaar-filter" onchange="toggleBoekhoudingWerkingsjaarFilter()">
           <option value="" ${!boekhoudingWerkingsjaarFilter?'selected':''}>Alle werkingsjaren</option>
