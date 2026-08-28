@@ -198,6 +198,23 @@ vereist een goedgekeurde WhatsApp Business-koppeling bij Meta — een
 zware, formele aanvraagprocedure met (meestal) kosten per bericht, wat
 voor een Chiro niet in verhouding staat tegenover wat het oplevert.
 
+## Werkingsjaar
+
+Chirokas rekent overal met een **werkingsjaar** (bv. september tot en
+met augustus) in plaats van het kalenderjaar — instelbaar bij
+Instellingen > Werkingsjaar. Dit wordt niet apart opgeslagen per
+boeking, maar telkens berekend uit de datum van de boeking, dus een
+wijziging achteraf aan de startdatum herschikt automatisch alle
+bestaande boekingen in de juiste jaren. Zichtbaar op:
+
+- **Overzicht**: de inkomsten/uitgaven-cijfers en de tabel per
+  afdeling tonen het lopende werkingsjaar (bv. "2026-2027"), niet
+  het kalenderjaar.
+- **Boekhouding**: een filter om de boekingenlijst tot één
+  werkingsjaar te beperken.
+- **Rapport**: een snelkeuze die de Van/Tot-datums van het rapport
+  automatisch invult voor een gekozen werkingsjaar.
+
 ## Kampinschrijvingen met gezinsprijzen
 
 Tabblad "Kamp" laat leden inschrijven voor het kamp aan een prijs die

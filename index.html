@@ -527,6 +527,30 @@ const INCOME_CATS = ['Lidgeld','Kampinschrijving','Activiteiten','Subsidies','Gi
 const EXPENSE_CATS = ['Materiaal','Kamp','Verzekering','Lokalen','Vorming leiding','Eten & drank','Overige kosten'];
 const AFDELINGEN = ['Pagatters','Speelclub jongens','Speelclub meisjes','Rakkers','Kwiks','Tippers','Toppers','Kerels','Tiptiens','Aspi jongens','Aspi meisjes','Leiding'];
 
+/* ---------- Werkingsjaar (bv. september-augustus, instelbaar) ---------- */
+function werkingsjaarVan(datumStr){
+  const [maand, dag] = (settings.werkingsjaarStart || '09-01').split('-').map(Number);
+  const d = new Date(datumStr);
+  const jaar = d.getFullYear();
+  const grens = new Date(jaar, maand-1, dag);
+  return d >= grens ? jaar : jaar-1;
+}
+function werkingsjaarLabel(startjaar){ return `${startjaar}-${startjaar+1}`; }
+function werkingsjaarBounds(startjaar){
+  const [maand, dag] = (settings.werkingsjaarStart || '09-01').split('-').map(Number);
+  const van = `${startjaar}-${String(maand).padStart(2,'0')}-${String(dag).padStart(2,'0')}`;
+  const eindDatum = new Date(startjaar+1, maand-1, dag);
+  eindDatum.setDate(eindDatum.getDate()-1);
+  const tot = eindDatum.toISOString().slice(0,10);
+  return { van, tot };
+}
+function werkingsjaarOpties(){
+  const jaren = new Set();
+  ledger.forEach(e=> jaren.add(werkingsjaarVan(e.datum)));
+  jaren.add(werkingsjaarVan(todayStr()));
+  return [...jaren].sort((a,b)=>b-a);
+}
+
 /* ---------- Toast ---------- */
 let toastTimer;
 function toast(msg){
@@ -606,12 +630,14 @@ async function toggleTestMode(){
 
 /* ---------- Dashboard ---------- */
 function renderAfdelingBreakdown(){
-  const year = new Date().getFullYear();
+  const wjStart = werkingsjaarVan(todayStr());
+  const wjLabel = werkingsjaarLabel(wjStart);
+  const { van: wjVan, tot: wjTot } = werkingsjaarBounds(wjStart);
   const groups = [...AFDELINGEN, '(Geen afdeling)'];
   const rows = groups.map(g=>{
     const key = g==='(Geen afdeling)' ? '' : g;
     const groupMembers = members.filter(m=>!m.isTest && (m.afdeling||'')===key);
-    const groupLedger = ledger.filter(e=>!e.isTest && (e.afdeling||'')===key && e.datum.slice(0,4)===String(year));
+    const groupLedger = ledger.filter(e=>!e.isTest && (e.afdeling||'')===key && e.datum >= wjVan && e.datum <= wjTot);
     const inc = groupLedger.filter(e=>e.type==='in').reduce((s,e)=>s+e.bedrag,0);
     const exp = groupLedger.filter(e=>e.type==='out').reduce((s,e)=>s+e.bedrag,0);
     return { naam: g, key, ledenCount: groupMembers.length, openstaand: groupMembers.filter(m=>!m.paidThisYear).length, inc, exp, saldo: inc-exp };
@@ -619,7 +645,7 @@ function renderAfdelingBreakdown(){
   if(rows.length===0) return '';
   return `
     <div class="card">
-      <h3 class="card-title">Per afdeling (${year})</h3>
+      <h3 class="card-title">Per afdeling (${wjLabel})</h3>
       <p class="muted" style="margin-bottom:8px;">Klik op een afdeling voor de ledenlijst — ook handig om leden zonder afdeling op te sporen.</p>
       <div class="table-scroll"><table><thead><tr><th>Afdeling</th><th>Leden</th><th>Openstaand</th><th style="text-align:right;">Inkomsten</th><th style="text-align:right;">Uitgaven</th><th style="text-align:right;">Saldo</th></tr></thead><tbody>
       ${rows.map(r=>`<tr onclick="drillIntoAfdeling('${r.key}')" style="cursor:pointer;" title="Bekijk leden in ${escapeHtml(r.naam)}"><td>${r.key===''?`<span class="badge-warn">${escapeHtml(r.naam)}</span>`:escapeHtml(r.naam)} ›</td><td class="tnum">${r.ledenCount}</td><td class="tnum">${r.openstaand}</td><td class="tnum amt-in" style="text-align:right;">${euro(r.inc)}</td><td class="tnum amt-out" style="text-align:right;">${euro(r.exp)}</td><td class="tnum" style="text-align:right; font-weight:600;">${euro(r.saldo)}</td></tr>`).join('')}
@@ -634,11 +660,13 @@ function drillIntoAfdeling(naam){
 
 function renderDashboard(){
   const el = document.getElementById('section-dashboard');
-  const year = new Date().getFullYear();
+  const wjStart = werkingsjaarVan(todayStr());
+  const wjLabel = werkingsjaarLabel(wjStart);
+  const { van: wjVan, tot: wjTot } = werkingsjaarBounds(wjStart);
   const scopedMembers = isHoofd() ? members : members.filter(m=>(m.afdeling||'')===myAfdeling());
   const scopedLedger = isHoofd() ? ledger : ledger.filter(e=>(e.afdeling||'')===myAfdeling());
   const real = scopedLedger.filter(e=>!e.isTest);
-  const thisYear = real.filter(e=> e.datum.slice(0,4)===String(year));
+  const thisYear = real.filter(e=> e.datum >= wjVan && e.datum <= wjTot);
   const inc = thisYear.filter(e=>e.type==='in').reduce((s,e)=>s+e.bedrag,0);
   const exp = thisYear.filter(e=>e.type==='out').reduce((s,e)=>s+e.bedrag,0);
   const openstaand = scopedMembers.filter(m=>!m.paidThisYear && !m.isTest).length;
@@ -651,8 +679,8 @@ function renderDashboard(){
   el.innerHTML = `
     ${(testEntries.length>0 || testMembers.length>0) ? `<div class="test-banner"><span>🧪 ${testMembers.length} testlid/leden en ${testEntries.length} testboeking(en) (samen ${euro(testNet)}) tellen hier bewust niet mee.${isHoofd() ? ' Te zien in \"Boekhouding\" en \"Leden\", op te ruimen bij \"Instellingen\".' : ''}</span></div>` : ''}
     <div class="stat-grid">
-      <div class="stat income"><div class="v tnum">${euro(inc)}</div><div class="k">Inkomsten ${year}</div></div>
-      <div class="stat expense"><div class="v tnum">${euro(exp)}</div><div class="k">Uitgaven ${year}</div></div>
+      <div class="stat income"><div class="v tnum">${euro(inc)}</div><div class="k">Inkomsten ${wjLabel}</div></div>
+      <div class="stat expense"><div class="v tnum">${euro(exp)}</div><div class="k">Uitgaven ${wjLabel}</div></div>
       <div class="stat"><div class="v tnum">${openstaand}</div><div class="k">Openstaande lidgelden</div></div>
     </div>
     <div class="card">
@@ -1811,7 +1839,9 @@ async function uploadAttachment(file, keyHint){
 function renderBoekhouding(){
   const el = document.getElementById('section-boekhouding');
   const baseLedger = isHoofd() ? ledger : ledger.filter(e=>(e.afdeling||'')===myAfdeling());
-  const sorted = [...baseLedger].sort((a,b)=> b.datum.localeCompare(a.datum)).filter(e=> !boekhoudingAfdelingFilter || (e.afdeling||'')===boekhoudingAfdelingFilter);
+  const sorted = [...baseLedger].sort((a,b)=> b.datum.localeCompare(a.datum))
+    .filter(e=> !boekhoudingAfdelingFilter || (e.afdeling||'')===boekhoudingAfdelingFilter)
+    .filter(e=> !boekhoudingWerkingsjaarFilter || werkingsjaarVan(e.datum)===parseInt(boekhoudingWerkingsjaarFilter,10));
   const realBalance = baseLedger.filter(e=>!e.isTest).reduce((s,e)=> s + (e.type==='in'? e.bedrag : -e.bedrag), 0);
   const testEntries = baseLedger.filter(e=>e.isTest);
   const testNet = testEntries.reduce((s,e)=> s + (e.type==='in'? e.bedrag : -e.bedrag), 0);
@@ -1848,6 +1878,12 @@ function renderBoekhouding(){
     <div class="card">
       <h3 class="card-title">${isHoofd() ? 'Alle boekingen' : 'Boekingen van ' + escapeHtml(myAfdeling())}</h3>
       <p class="muted" style="margin-bottom:10px;">${isHoofd() ? 'Echt saldo (telt mee in Overzicht)' : 'Saldo van je afdeling'}: <b class="tnum" style="color:var(--ink);">${euro(realBalance)}</b>${testEntries.length>0 ? ` · <span style="color:#8A6D1D;">waarvan ${euro(testNet)} in ${testEntries.length} testboeking(en) hieronder niet meegerekend</span>` : ''}</p>
+      <div class="field" style="max-width:280px;"><label>Filter op werkingsjaar (enkel de lijst hieronder)</label>
+        <select id="boekhouding-werkingsjaar-filter" onchange="toggleBoekhoudingWerkingsjaarFilter()">
+          <option value="" ${!boekhoudingWerkingsjaarFilter?'selected':''}>Alle werkingsjaren</option>
+          ${werkingsjaarOpties().map(wj=>`<option value="${wj}" ${boekhoudingWerkingsjaarFilter===String(wj)?'selected':''}>${werkingsjaarLabel(wj)}</option>`).join('')}
+        </select>
+      </div>
       ${isHoofd() ? `
       <div class="field" style="max-width:280px;"><label>Filter op afdeling (enkel de lijst hieronder)</label>
         <select id="boekhouding-afdeling-filter" onchange="toggleBoekhoudingAfdelingFilter()">
@@ -1855,16 +1891,135 @@ function renderBoekhouding(){
           ${AFDELINGEN.map(a=>`<option value="${a}" ${boekhoudingAfdelingFilter===a?'selected':''}>${a}</option>`).join('')}
         </select>
       </div>` : ''}
-      ${sorted.length===0 ? `<p class="empty">${boekhoudingAfdelingFilter ? 'Geen boekingen voor deze afdeling.' : 'Nog geen boekingen.'}</p>` :
+      ${sorted.length===0 ? `<p class="empty">${boekhoudingAfdelingFilter || boekhoudingWerkingsjaarFilter ? 'Geen boekingen voor deze selectie.' : 'Nog geen boekingen.'}</p>` :
         `<div class="table-scroll"><table><thead><tr><th>Datum</th><th>Omschrijving</th><th>Categorie</th><th>Afdeling</th><th style="text-align:right;">Bedrag</th><th>Bijlage</th><th></th></tr></thead><tbody>
         ${sorted.map(e=>`<tr><td class="tnum" onclick="openLedgerDetail(${e.id})" style="cursor:pointer;" title="Klik voor details">${e.datum}</td><td onclick="openLedgerDetail(${e.id})" style="cursor:pointer;" title="Klik voor details">${escapeHtml(e.omschrijving)} ${e.isTest?'<span class="pill test">Test</span>':''}</td><td><span class="cat-tag">${escapeHtml(e.categorie)}</span></td><td>${e.afdeling ? `<span class="cat-tag">${escapeHtml(e.afdeling)}</span>` : ''}</td><td style="text-align:right;" class="tnum ${e.type==='in'?'amt-in':'amt-out'}">${e.type==='in'?'+':'-'}${euro(e.bedrag)}</td><td>${e.bijlage ? '📎' : ''}</td><td><button class="del-x" onclick="removeLedgerEntry(${e.id})">✕</button></td></tr>`).join('')}
         </tbody></table></div>`}
+    </div>
+    <div class="card">
+      <h3 class="card-title">Rapport</h3>
+      <p class="muted">Overzicht van inkomsten en uitgaven voor een zelf gekozen periode, per categorie${isHoofd() ? ' en per afdeling' : ''} — handig voor de algemene vergadering of als archief.</p>
+      <div class="field"><label>Werkingsjaar (vult Van/Tot automatisch in)</label>
+        <select id="rapport-werkingsjaar" onchange="vulRapportWerkingsjaar()">
+          ${werkingsjaarOpties().map(wj=>`<option value="${wj}" ${wj===werkingsjaarVan(todayStr())?'selected':''}>${werkingsjaarLabel(wj)}</option>`).join('')}
+          <option value="">Aangepaste periode…</option>
+        </select>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Van</label><input id="rapport-van" type="date" value="${werkingsjaarBounds(werkingsjaarVan(todayStr())).van}"></div>
+        <div class="field"><label>Tot</label><input id="rapport-tot" type="date" value="${werkingsjaarBounds(werkingsjaarVan(todayStr())).tot}"></div>
+      </div>
+      <button class="btn btn-primary btn-block" onclick="genereerRapport()">Rapport genereren</button>
+      <div id="rapport-output"></div>
     </div>
   `;
   fillLgCats();
 }
 let boekhoudingAfdelingFilter = '';
 function toggleBoekhoudingAfdelingFilter(){ boekhoudingAfdelingFilter = document.getElementById('boekhouding-afdeling-filter').value; renderBoekhouding(); }
+let boekhoudingWerkingsjaarFilter = '';
+function toggleBoekhoudingWerkingsjaarFilter(){ boekhoudingWerkingsjaarFilter = document.getElementById('boekhouding-werkingsjaar-filter').value; renderBoekhouding(); }
+
+/* ---------- Rapport ---------- */
+let laatsteRapport = null;
+function computeRapport(vanDatum, totDatum){
+  const baseLedger = isHoofd() ? ledger : ledger.filter(e=>(e.afdeling||'')===myAfdeling());
+  const real = baseLedger.filter(e=>!e.isTest);
+  const inPeriode = real.filter(e=> e.datum >= vanDatum && e.datum <= totDatum);
+  const voorPeriode = real.filter(e=> e.datum < vanDatum);
+
+  const beginsaldo = voorPeriode.reduce((s,e)=> s + (e.type==='in'?e.bedrag:-e.bedrag), 0);
+  const inkomsten = inPeriode.filter(e=>e.type==='in').reduce((s,e)=>s+e.bedrag,0);
+  const uitgaven = inPeriode.filter(e=>e.type==='out').reduce((s,e)=>s+e.bedrag,0);
+  const eindsaldo = beginsaldo + inkomsten - uitgaven;
+
+  const perCategorie = {};
+  inPeriode.forEach(e=>{
+    const key = `${e.type}|${e.categorie}`;
+    perCategorie[key] = (perCategorie[key]||0) + e.bedrag;
+  });
+
+  const perAfdeling = {};
+  inPeriode.forEach(e=>{
+    const key = e.afdeling || '(Geen afdeling)';
+    if(!perAfdeling[key]) perAfdeling[key] = {inkomsten:0, uitgaven:0};
+    if(e.type==='in') perAfdeling[key].inkomsten += e.bedrag;
+    else perAfdeling[key].uitgaven += e.bedrag;
+  });
+
+  return { vanDatum, totDatum, beginsaldo, inkomsten, uitgaven, eindsaldo, perCategorie, perAfdeling, boekingen: inPeriode };
+}
+function vulRapportWerkingsjaar(){
+  const sel = document.getElementById('rapport-werkingsjaar').value;
+  if(!sel) return;
+  const { van, tot } = werkingsjaarBounds(parseInt(sel,10));
+  document.getElementById('rapport-van').value = van;
+  document.getElementById('rapport-tot').value = tot;
+}
+function genereerRapport(){
+  const van = document.getElementById('rapport-van').value;
+  const tot = document.getElementById('rapport-tot').value;
+  if(!van || !tot){ toast('Kies een start- en einddatum.'); return; }
+  if(van > tot){ toast('Startdatum moet voor einddatum liggen.'); return; }
+  laatsteRapport = computeRapport(van, tot);
+  document.getElementById('rapport-output').innerHTML = renderRapportSummary(laatsteRapport);
+}
+function renderRapportSummary(r){
+  const catRows = Object.entries(r.perCategorie).map(([key,bedrag])=>{
+    const [type, cat] = key.split('|');
+    return {type, cat, bedrag};
+  }).sort((a,b)=> a.type===b.type ? a.cat.localeCompare(b.cat) : (a.type==='in'?-1:1));
+  const afdRows = Object.entries(r.perAfdeling).map(([naam,v])=>({naam, inkomsten:v.inkomsten, uitgaven:v.uitgaven, saldo:v.inkomsten-v.uitgaven}));
+
+  return `
+    <div class="stat-grid" style="margin-top:14px;">
+      <div class="stat income"><div class="v tnum">${euro(r.inkomsten)}</div><div class="k">Inkomsten</div></div>
+      <div class="stat expense"><div class="v tnum">${euro(r.uitgaven)}</div><div class="k">Uitgaven</div></div>
+      <div class="stat"><div class="v tnum">${euro(r.eindsaldo)}</div><div class="k">Eindsaldo</div></div>
+    </div>
+    <p class="muted">Beginsaldo op ${r.vanDatum}: ${euro(r.beginsaldo)} · ${r.boekingen.length} boeking(en) in deze periode.</p>
+    ${catRows.length===0 ? '' : `
+    <h4 style="margin:14px 0 6px; font-size:14px;">Per categorie</h4>
+    <div class="table-scroll"><table><thead><tr><th>Categorie</th><th style="text-align:right;">Bedrag</th></tr></thead><tbody>
+    ${catRows.map(c=>`<tr><td>${escapeHtml(c.cat)}</td><td style="text-align:right;" class="tnum ${c.type==='in'?'amt-in':'amt-out'}">${c.type==='in'?'+':'-'}${euro(c.bedrag)}</td></tr>`).join('')}
+    </tbody></table></div>`}
+    ${isHoofd() && afdRows.length>0 ? `
+    <h4 style="margin:14px 0 6px; font-size:14px;">Per afdeling</h4>
+    <div class="table-scroll"><table><thead><tr><th>Afdeling</th><th style="text-align:right;">Inkomsten</th><th style="text-align:right;">Uitgaven</th><th style="text-align:right;">Saldo</th></tr></thead><tbody>
+    ${afdRows.map(a=>`<tr><td>${escapeHtml(a.naam)}</td><td style="text-align:right;" class="tnum amt-in">${euro(a.inkomsten)}</td><td style="text-align:right;" class="tnum amt-out">${euro(a.uitgaven)}</td><td style="text-align:right; font-weight:600;" class="tnum">${euro(a.saldo)}</td></tr>`).join('')}
+    </tbody></table></div>` : ''}
+    <button class="btn btn-ghost btn-block" style="margin-top:12px;" onclick="exportRapportExcel()">Exporteer naar Excel</button>
+  `;
+}
+function exportRapportExcel(){
+  if(!laatsteRapport){ toast('Genereer eerst een rapport.'); return; }
+  if(typeof XLSX === 'undefined'){ toast('Excel-bibliotheek niet geladen.'); return; }
+  const r = laatsteRapport;
+  const wb = XLSX.utils.book_new();
+
+  const wsOverzicht = XLSX.utils.aoa_to_sheet([
+    ['Periode', `${r.vanDatum} tot ${r.totDatum}`],
+    ['Beginsaldo', r.beginsaldo],
+    ['Inkomsten', r.inkomsten],
+    ['Uitgaven', r.uitgaven],
+    ['Eindsaldo', r.eindsaldo]
+  ]);
+  XLSX.utils.book_append_sheet(wb, wsOverzicht, 'Overzicht');
+
+  const catRows = Object.entries(r.perCategorie).map(([key,bedrag])=>{
+    const [type, cat] = key.split('|');
+    return { Type: type==='in'?'Inkomst':'Uitgave', Categorie: cat, Bedrag: bedrag };
+  });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(catRows), 'Per categorie');
+
+  const afdRows = Object.entries(r.perAfdeling).map(([naam,v])=>({ Afdeling: naam, Inkomsten: v.inkomsten, Uitgaven: v.uitgaven, Saldo: v.inkomsten-v.uitgaven }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(afdRows), 'Per afdeling');
+
+  const boekingRows = r.boekingen.map(e=>({ Datum:e.datum, Omschrijving:e.omschrijving, Categorie:e.categorie, Afdeling:e.afdeling||'', Type: e.type==='in'?'Inkomst':'Uitgave', Bedrag: e.bedrag }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(boekingRows), 'Alle boekingen');
+
+  XLSX.writeFile(wb, `chirokas-rapport-${r.vanDatum}_${r.totDatum}.xlsx`);
+}
 function fillLgCats(){
   const type = document.getElementById('lg-type')?.value || 'in';
   const sel = document.getElementById('lg-categorie');
@@ -2015,6 +2170,19 @@ function renderInstellingen(){
         ${validIban===false?'<div class="badge-warn">⚠ dit IBAN-nummer lijkt ongeldig</div>':''}
       </div>
       <div class="field"><label>BIC (optioneel)</label><input id="st-bic" type="text" value="${escapeHtml(settings.bic||'')}" placeholder="GEBABEBB"></div>
+      <button class="btn btn-primary btn-block" onclick="saveInstellingen()">Opslaan</button>
+    </div>
+    <div class="card">
+      <h3 class="card-title">Werkingsjaar</h3>
+      <p class="muted">Chirokas groepeert boekingen automatisch per werkingsjaar op basis van de datum, in plaats van per kalenderjaar — zichtbaar op Overzicht, in het filter bij Boekhouding, en als snelkeuze bij het Rapport. Stel hier in wanneer een nieuw werkingsjaar begint.</p>
+      <div class="row2">
+        <div class="field"><label>Startmaand</label>
+          <select id="st-wj-maand">
+            ${['Januari','Februari','Maart','April','Mei','Juni','Juli','Augustus','September','Oktober','November','December'].map((naam,idx)=>`<option value="${idx+1}" ${(parseInt((settings.werkingsjaarStart||'09-01').split('-')[0],10)===idx+1)?'selected':''}>${naam}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field"><label>Startdag</label><input id="st-wj-dag" type="number" min="1" max="31" value="${parseInt((settings.werkingsjaarStart||'09-01').split('-')[1],10)}"></div>
+      </div>
       <button class="btn btn-primary btn-block" onclick="saveInstellingen()">Opslaan</button>
     </div>
     <div class="card">
@@ -2184,6 +2352,12 @@ async function saveInstellingen(){
   settings.rekeninghouder = document.getElementById('st-houder').value.trim();
   settings.iban = document.getElementById('st-iban').value.trim();
   settings.bic = document.getElementById('st-bic').value.trim();
+  const wjMaand = document.getElementById('st-wj-maand');
+  if(wjMaand){
+    const maand = parseInt(wjMaand.value,10) || 9;
+    const dag = parseInt(document.getElementById('st-wj-dag').value,10) || 1;
+    settings.werkingsjaarStart = `${String(maand).padStart(2,'0')}-${String(dag).padStart(2,'0')}`;
+  }
   const stdBedrag = document.getElementById('st-standaardlidgeld');
   if(stdBedrag) settings.standaardLidgeld = parseFloat(stdBedrag.value) || 30;
   const inschrOpen = document.getElementById('st-inschrijvingopen');
