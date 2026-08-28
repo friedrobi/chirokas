@@ -420,13 +420,16 @@ function renderLoginScreen(){
     <div class="card" style="max-width:380px; margin:60px auto;">
       <h2 class="display" style="margin-top:0;">Chirokas</h2>
       <p class="muted">Log in met je Chirokas-account.</p>
-      <div class="field"><label>E-mailadres</label><input id="login-email" type="email" placeholder="naam@voorbeeld.be"></div>
-      <div class="field"><label>Wachtwoord</label><input id="login-wachtwoord" type="password"></div>
-      <button class="btn btn-primary btn-block" onclick="doLogin()">Inloggen</button>
+      <form id="login-form">
+        <div class="field"><label>E-mailadres</label><input id="login-email" type="email" autocomplete="username" placeholder="naam@voorbeeld.be"></div>
+        <div class="field"><label>Wachtwoord</label><input id="login-wachtwoord" type="password" autocomplete="current-password"></div>
+        <button class="btn btn-primary btn-block" type="submit">Inloggen</button>
+      </form>
       <button class="btn btn-ghost btn-block" style="margin-top:8px;" onclick="doResetPassword()">Wachtwoord vergeten?</button>
       <p id="login-error" style="margin-top:10px; color:var(--rust); font-size:13px;"></p>
     </div>
   `;
+  document.getElementById('login-form').addEventListener('submit', (e)=>{ e.preventDefault(); doLogin(); });
 }
 function renderNoRoleScreen(){
   const app = document.getElementById('app');
@@ -786,6 +789,7 @@ function buildMemberListHtml(){
         ${m.isTest ? '<span class="pill test">Test</span>' : ''}
         <span class="pill ${m.paidThisYear?'paid':'due'}">${m.paidThisYear?'Betaald':'Openstaand'}</span>
         <button class="btn btn-ghost btn-sm" onclick="openQr(${i})">Betaalverzoek</button>
+        ${m.gsm ? `<button class="btn btn-ghost btn-sm" onclick="openWhatsapp(${i})">WhatsApp</button>` : ''}
         <button class="del-x" title="Verwijder lid" onclick="removeMember(${i})">✕</button>
       </div>
     </div>
@@ -1196,7 +1200,7 @@ function renderKamp(){
       actions = `<button class="btn btn-primary btn-sm" onclick="registerForKamp(${i})">Inschrijven voor kamp</button>`;
     } else if(!kamp.betaald){
       statusPill = `<span class="pill due">Openstaand ${euro(kamp.bedrag)}</span>`;
-      actions = `<button class="btn btn-primary btn-sm" onclick="openKampQr(${i})" ${!ibanOk?'disabled':''}>Betaalverzoek</button><button class="btn btn-ghost btn-sm" onclick="unregisterFromKamp(${i})">Ongedaan maken</button>`;
+      actions = `<button class="btn btn-primary btn-sm" onclick="openKampQr(${i})" ${!ibanOk?'disabled':''}>Betaalverzoek</button>${m.gsm ? `<button class="btn btn-ghost btn-sm" onclick="openKampWhatsapp(${i})" ${!ibanOk?'disabled':''}>WhatsApp</button>` : ''}<button class="btn btn-ghost btn-sm" onclick="unregisterFromKamp(${i})">Ongedaan maken</button>`;
     } else {
       statusPill = `<span class="pill paid">Betaald ${euro(kamp.bedrag)}</span>`;
       actions = '';
@@ -1354,6 +1358,19 @@ async function openWhatsapp(i){
     if(!mollieUrl) toast('Mollie-link kon niet aangemaakt worden — bericht gaat wel door met de gratis overschrijving.');
   }
   const text = buildWhatsappText(m, ogm, mollieUrl);
+  window.location.href = `https://wa.me/${num}?text=${encodeURIComponent(text)}`;
+  setTimeout(()=>{ if(confirm(`WhatsApp geopend voor ${m.naam}. Markeren als verstuurd?`)) markReminderSent(i); }, 800);
+}
+async function openKampWhatsapp(i){
+  const m = members[i];
+  if(!settings.iban || !ibanValid(settings.iban)){ toast('Vul eerst een geldig IBAN in bij Instellingen.'); return; }
+  if(!m.kamp || !m.kamp.ingeschreven){ toast('Dit lid is nog niet ingeschreven voor kamp.'); return; }
+  if(!m.gsm){ toast('Dit lid heeft geen gsm-nummer.'); return; }
+  const num = formatWhatsappNumber(m.gsm);
+  if(!num){ toast('Kon geen geldig nummer maken van dit gsm-nummer.'); return; }
+  const ogm = await ensureKampOgm(i);
+  const chiroNaam = settings.naam || 'de Chiro';
+  const text = `Hallo! Graag ontvangen we de betaling voor de kampinschrijving van ${m.naam} bij ${chiroNaam}.\n\nBedrag: ${euro(m.kamp.bedrag)}\nRekeningnummer: ${settings.iban}\nMededeling: ${ogm.formatted}\n\nAlvast bedankt!`;
   window.location.href = `https://wa.me/${num}?text=${encodeURIComponent(text)}`;
   setTimeout(()=>{ if(confirm(`WhatsApp geopend voor ${m.naam}. Markeren als verstuurd?`)) markReminderSent(i); }, 800);
 }
