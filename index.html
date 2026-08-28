@@ -1320,29 +1320,39 @@ function buildWhatsappText(m, ogm, mollieUrl){
   text += `\n\nAlvast bedankt!`;
   return text;
 }
-async function ensureMollieCheckoutUrl(m){
+async function createMolliePayment(m, amount, description){
   if(!settings.mollieEnabled || !settings.mollieWorkerUrl) return null;
   try{
     const redirectUrl = `${inschrijfLinkUrl()}?molliereturn=1&memberId=${m.id}`;
     const res = await fetch(`${settings.mollieWorkerUrl.replace(/\/$/,'')}/create-payment`, {
       method:'POST',
       headers:{ 'Content-Type':'application/json' },
-      body: JSON.stringify({
-        amount: m.bedrag.toFixed(2),
-        description: `Lidgeld ${settings.naam||'Chiro'} — ${m.naam}`,
-        redirectUrl,
-        metadata: { memberId: m.id }
-      })
+      body: JSON.stringify({ amount: amount.toFixed(2), description, redirectUrl, metadata: { memberId: m.id } })
     });
     if(!res.ok) throw new Error('mollie create-payment mislukt');
-    const data = await res.json();
-    m.mollieId = data.id;
-    m.molliePaymentStatus = 'pending';
-    await saveMembers();
-    return data.checkoutUrl;
+    return await res.json();
   }catch(e){
     return null;
   }
+}
+async function ensureMollieCheckoutUrl(m){
+  const data = await createMolliePayment(m, m.bedrag, `Lidgeld ${settings.naam||'Chiro'} — ${m.naam}`);
+  if(!data) return null;
+  m.mollieId = data.id;
+  m.molliePaymentStatus = 'pending';
+  await saveMembers();
+  return data.checkoutUrl;
+}
+async function ensureKampMollieCheckoutUrl(m){
+  // Eigen veld (m.kamp.mollieId) los van m.mollieId (lidgeld) — anders zouden een
+  // openstaand lidgeld én een openstaande kampinschrijving voor hetzelfde lid
+  // elkaars Mollie-betaling overschrijven.
+  const data = await createMolliePayment(m, m.kamp.bedrag, `Kampinschrijving ${settings.naam||'Chiro'} — ${m.naam}`);
+  if(!data) return null;
+  m.kamp.mollieId = data.id;
+  m.kamp.molliePaymentStatus = 'pending';
+  await saveMembers();
+  return data.checkoutUrl;
 }
 async function openWhatsapp(i){
   const m = members[i];
@@ -1369,8 +1379,18 @@ async function openKampWhatsapp(i){
   const num = formatWhatsappNumber(m.gsm);
   if(!num){ toast('Kon geen geldig nummer maken van dit gsm-nummer.'); return; }
   const ogm = await ensureKampOgm(i);
+  let mollieUrl = null;
+  if(settings.mollieEnabled && settings.mollieWorkerUrl){
+    toast('Mollie-link aanmaken…');
+    mollieUrl = await ensureKampMollieCheckoutUrl(m);
+    if(!mollieUrl) toast('Mollie-link kon niet aangemaakt worden — bericht gaat wel door met de gratis overschrijving.');
+  }
   const chiroNaam = settings.naam || 'de Chiro';
-  const text = `Hallo! Graag ontvangen we de betaling voor de kampinschrijving van ${m.naam} bij ${chiroNaam}.\n\nBedrag: ${euro(m.kamp.bedrag)}\nRekeningnummer: ${settings.iban}\nMededeling: ${ogm.formatted}\n\nAlvast bedankt!`;
+  let text = `Hallo! Graag ontvangen we de betaling voor de kampinschrijving van ${m.naam} bij ${chiroNaam}.\n\nBedrag: ${euro(m.kamp.bedrag)}\nRekeningnummer: ${settings.iban}\nMededeling: ${ogm.formatted}`;
+  if(mollieUrl){
+    text += `\n\nLiever meteen online betalen (Bancontact/kaart, kleine kost)? ${mollieUrl}`;
+  }
+  text += `\n\nAlvast bedankt!`;
   window.location.href = `https://wa.me/${num}?text=${encodeURIComponent(text)}`;
   setTimeout(()=>{ if(confirm(`WhatsApp geopend voor ${m.naam}. Markeren als verstuurd?`)) markReminderSent(i); }, 800);
 }
@@ -1730,26 +1750,35 @@ function renderCodaReview(){
 
 /* ---------- Mollie-betalingen controleren (server-side call via de gekoppelde Cloudflare Worker) ---------- */
 function molliePendingMembers(){
-  return members.filter(m => m.mollieId && m.molliePaymentStatus !== 'paid');
+  const lidgeld = members.filter(m => m.mollieId && m.molliePaymentStatus !== 'paid').map(m=>({m, soort:'lidgeld', mollieId:m.mollieId}));
+  const kamp = members.filter(m => m.kamp && m.kamp.mollieId && m.kamp.molliePaymentStatus !== 'paid').map(m=>({m, soort:'kamp', mollieId:m.kamp.mollieId}));
+  return [...lidgeld, ...kamp];
 }
 async function checkMolliePayments(){
   if(!settings.mollieWorkerUrl){ toast('Vul eerst een Worker-URL in bij Instellingen.'); return; }
   const pending = molliePendingMembers();
   if(pending.length===0){ toast('Geen openstaande Mollie-betalingen.'); return; }
   let paidCount = 0, errorCount = 0;
-  for(const m of pending){
+  for(const { m, soort, mollieId } of pending){
     try{
-      const res = await fetch(`${settings.mollieWorkerUrl.replace(/\/$/,'')}/payment-status?id=${encodeURIComponent(m.mollieId)}`);
+      const res = await fetch(`${settings.mollieWorkerUrl.replace(/\/$/,'')}/payment-status?id=${encodeURIComponent(mollieId)}`);
       if(!res.ok) throw new Error('bad status');
       const data = await res.json();
-      const key = `mollie:${m.mollieId}`;
+      const key = `mollie${soort==='kamp'?'-kamp':''}:${mollieId}`;
       if(data.status === 'paid' && !ledger.some(e=>e.codaKey===key)){
-        m.paidThisYear = true;
-        m.molliePaymentStatus = 'paid';
-        ledger.push({ id: Date.now()+paidCount, datum: (data.paidAt||todayStr()).slice(0,10), omschrijving: `Lidgeld ${m.naam} (Mollie)`, categorie:'Lidgeld', bedrag: m.bedrag, type:'in', afdeling: m.afdeling||'', isTest: !!m.isTest, ogmRaw: null, codaKey: key });
+        if(soort === 'kamp'){
+          m.kamp.betaald = true;
+          m.kamp.molliePaymentStatus = 'paid';
+          ledger.push({ id: Date.now()+paidCount, datum: (data.paidAt||todayStr()).slice(0,10), omschrijving: `Kampinschrijving ${m.naam} (Mollie)`, categorie:'Kampinschrijving', bedrag: m.kamp.bedrag, type:'in', afdeling: m.afdeling||'', isTest: !!m.isTest, ogmRaw: null, codaKey: key });
+        } else {
+          m.paidThisYear = true;
+          m.molliePaymentStatus = 'paid';
+          ledger.push({ id: Date.now()+paidCount, datum: (data.paidAt||todayStr()).slice(0,10), omschrijving: `Lidgeld ${m.naam} (Mollie)`, categorie:'Lidgeld', bedrag: m.bedrag, type:'in', afdeling: m.afdeling||'', isTest: !!m.isTest, ogmRaw: null, codaKey: key });
+        }
         paidCount++;
-      } else if(data.status && data.status !== m.molliePaymentStatus){
-        m.molliePaymentStatus = data.status;
+      } else if(data.status){
+        if(soort === 'kamp' && data.status !== m.kamp.molliePaymentStatus) m.kamp.molliePaymentStatus = data.status;
+        else if(soort === 'lidgeld' && data.status !== m.molliePaymentStatus) m.molliePaymentStatus = data.status;
       }
     }catch(e){ errorCount++; }
   }
